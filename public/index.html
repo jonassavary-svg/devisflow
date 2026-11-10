@@ -307,8 +307,18 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .swatches button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
 .swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.cat-head { display: grid; grid-template-columns: 1fr 74px 84px 22px; gap: 6px; font-size: 11.5px; color: var(--muted); margin-bottom: -4px; }
+.cat-item input::placeholder, #s-ai::placeholder { color: var(--muted); opacity: .55; font-style: italic; }
+.dest-l { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 14px; padding: 12px; text-align: left; font: 400 12.5px/1.35 var(--body); cursor: pointer; min-width: 0; }
+.dest-l b { display: flex; align-items: center; gap: 6px; color: var(--ink); font: 700 15px var(--display); margin-bottom: 3px; }
+.dest-l svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+details.more { font-size: 13px; }
+details.more summary { cursor: pointer; color: var(--muted); text-decoration: underline; margin: 4px 0; }
+details.more[open] { display: flex; flex-direction: column; gap: 8px; }
 .cat-item { border-bottom: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; gap: 6px; }
-.cat-top { display: grid; grid-template-columns: 1fr 74px 84px auto; gap: 6px; align-items: center; }
+.cat-top { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-items: center; }
+.cat-name { display: flex; gap: 6px; align-items: center; }
+.cat-name input { flex: 1; min-width: 0; padding: 7px 8px; font-size: 14px; font-weight: 600; }
 .cat-top input, .cat-top select, .cat-item .note { padding: 7px 8px; font-size: 13.5px; min-width: 0; }
 .cat-item .note { font-size: 12.5px; }
 .sugg-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); }
@@ -365,7 +375,7 @@ details.opts[open] summary { margin-bottom: 4px; }
 .big-new h3 { font-size: 16px; }
 .big-new .composer { background: transparent; border-top: 0; position: static; padding-top: 0; }
 .empty { color: var(--muted); font-size: 13.5px; text-align: center; padding: 16px 0; }
-@media (max-width: 380px) { .cat-top { grid-template-columns: 1fr 64px 70px auto; } .seg button { font-size: 11.5px; } }
+@media (max-width: 380px) { .seg button { font-size: 11.5px; } }
 .test-row { border-top: 1px solid var(--line); padding: 10px 0; }
 .test-row .card-top { gap: 8px; }
 .checks { margin: 6px 0; padding-left: 0; list-style: none; font-size: 13px; }
@@ -678,7 +688,7 @@ Conditions par défaut : prix ${S.defaults.priceType}, validité des devis ${S.d
 Emails : ${S.email.address === "tu" ? "tutoyer" : "vouvoyer"} le client. Signature :\n${S.email.signature}
 Consignes de l'artisan : ${S.aiNotes || "aucune"}
 CATALOGUE DE PRIX (id, prestation, unité, prix CHF, règle) :
-${S.catalogue.map(c => `- ${c.id} | ${c.label} | ${c.unit} | ${c.price}${c.note ? " | règle : " + c.note : ""}`).join("\n")}`;
+${S.catalogue.filter(c => String(c.label).trim()).map(c => `- ${c.id} | ${c.label} | ${c.unit} | ${c.price}${c.note ? " | règle : " + c.note : ""}`).join("\n")}`;
 }
 function act(d, text) { d.chat.push({ role: "action", text }); }
 // Renvoyé à l'IA après chaque modification du devis : elle voit tout de suite le résultat et les points à régler.
@@ -1244,7 +1254,7 @@ function dFiche(d) {
 }
 function dDevis(d) {
   const t = totals(d), rooms = [...new Set(d.quote.lines.map(l => l.room))], canUndo = (ui.undo[d.id] || []).length;
-  const opts = `<option value="">+ Ajouter une prestation…</option>${S.catalogue.map(c => `<option value="${c.id}">${esc(c.label)} (${chf(c.price)}/${c.unit})</option>`).join("")}<option value="__free">Ligne libre</option>`;
+  const opts = `<option value="">+ Ajouter une prestation…</option>${S.catalogue.filter(c => String(c.label).trim()).map(c => `<option value="${c.id}">${esc(c.label)} (${chf(c.price)}/${c.unit})</option>`).join("")}<option value="__free">Ligne libre</option>`;
   const w = d.quote.lines.length ? checkQuote(d) : [];
   const roomSum = (r) => d.quote.lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
   return `<div class="toolbar"><button class="mini" id="undo" ${canUndo ? "" : "disabled"}>↶ Annuler</button><button class="mini" data-dtab="pdf">Aperçu PDF</button>${downloads && d.quote.lines.length ? `<button class="mini" id="pdf">Télécharger le PDF</button>` : ""}</div>
@@ -1418,25 +1428,38 @@ function viewSettings() {
       <label class="lab">Avec les clients<select id="s-addr"><option value="vous" ${S.email.address === "vous" ? "selected" : ""}>Vouvoyer</option><option value="tu" ${S.email.address === "tu" ? "selected" : ""}>Tutoyer</option></select></label>
       <label class="lab">Signature<textarea id="s-sig">${esc(S.email.signature)}</textarea></label>
     </div>
+    <div class="panel"><h3>Mon catalogue de prix</h3>
+      <p class="hint">L'IA n'utilise que ces prix. Tu peux ajouter sous chaque prestation une règle qu'elle respectera (ex. « 2 couches incluses »).</p>
+      ${!S.catalogue.length && !ui.catMode ? `<div class="dest">
+          <label class="dest-l" for="oldquote-in"><b>${ICONS.doc} Importer un document</b>Liste de prix ou ancien devis (photo, PDF, texte). L'IA en tire tes prestations.</label>
+          <button id="cat-manual"><b>${ICONS.note} Saisir à la main</b>Tu entres tes prestations une par une.</button>
+        </div>
+        <details class="more" ${ui.tplConfirm ? "open" : ""}><summary>ou partir d'un modèle de métier</summary>
+          <div class="addrow"><select id="tpl-trade" aria-label="Modèle de métier">${Object.entries(TRADES).map(([k, t]) => `<option value="${k}">Modèle ${t.name}</option>`).join("")}</select><button class="pill-btn" id="tpl-apply">${ui.tplConfirm ? "Confirmer ?" : "Charger"}</button></div>
+          <p class="hint">Un catalogue type de ce métier, à adapter avec tes prix.</p>
+        </details>`
+      : `${ui.catBusy ? `<p class="hint"><span class="spin"></span> Lecture du document…</p>` : ""}
+        ${ui.catSugg.length ? `<div class="ai"><span class="ai-tag">Prestations trouvées dans le document</span>${ui.catSugg.map((x, i) => `<div class="sugg-item"><span>${esc(x.label)} · ${chf(num(x.price))}/${esc(x.unit)}</span><button class="mini" data-addsugg="${i}">Ajouter</button></div>`).join("")}<button class="mini" id="addsugg-all">Tout ajouter</button></div>` : ""}
+        <div>${S.catalogue.map(i => `<div class="cat-item" data-cat="${i.id}">
+          <div class="cat-name"><input class="field" id="c-l-${i.id}" data-cf="label" value="${esc(i.label)}" placeholder="Prestation, ex. Peinture des murs" aria-label="Prestation"><button class="del" data-delcat="${i.id}" aria-label="Supprimer">×</button></div>
+          <div class="cat-top"><select id="c-u-${i.id}" data-cf="unit" aria-label="Unité">${["m²", "m", "pce", "h", "forfait"].map(u => `<option ${u === i.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
+            <input class="field price" id="c-p-${i.id}" data-cf="price" inputmode="decimal" value="${i.price === "" || (i.price === 0 && !i.label) ? "" : i.price}" placeholder="Prix CHF, ex. 18" aria-label="Prix CHF"></div>
+          <input class="field note" id="c-n-${i.id}" data-cf="note" value="${esc(i.note || "")}" placeholder="Règle pour l'IA (facultatif), ex. 2 couches incluses" aria-label="Règle"></div>`).join("")}</div>
+        <button class="btn ghost" id="add-cat">+ Ajouter une prestation</button>
+        <details class="more" ${ui.tplConfirm ? "open" : ""}><summary>Autres options : importer un document, utiliser un modèle de métier</summary>
+          <label class="pill-btn" for="oldquote-in">${ICONS.doc}<span>Importer un document (photo, PDF, texte)</span></label>
+          <div class="addrow"><select id="tpl-trade" aria-label="Modèle de métier">${Object.entries(TRADES).map(([k, t]) => `<option value="${k}">Modèle ${t.name}</option>`).join("")}</select><button class="pill-btn" id="tpl-apply">${ui.tplConfirm ? "Confirmer ?" : "Charger"}</button></div>
+          <p class="hint">Un modèle remplace ton catalogue par un catalogue type de ce métier, à adapter avec tes prix.</p>
+        </details>`}
+      <input class="file-in" type="file" accept="image/*,application/pdf,.pdf,.txt,.csv,text/plain,text/csv" id="oldquote-in">
+    </div>
     <div class="panel"><h3>Ce que l'IA doit savoir</h3>
       <p class="hint">Tes habitudes et règles, en langage normal. L'assistant les applique à chaque devis.</p>
-      <textarea id="s-ai" placeholder="Ex. : je compte toujours 1 h de rebouchage par pièce…">${esc(S.aiNotes)}</textarea>
+      <textarea id="s-ai" placeholder="Ex. : je ne travaille pas le samedi. Toujours proposer le déplacement. Je compte 1 h de rebouchage par pièce…">${esc(S.aiNotes)}</textarea>
     </div>
-    <div class="panel"><h3>Mon catalogue de prix</h3>
-      <p class="hint">L'IA n'utilise que ces prix. La note sous chaque prestation est une règle qu'elle respecte (ex. « 2 couches incluses »).</p>
-      <div class="addrow"><select id="tpl-trade" aria-label="Modèle de métier">${Object.entries(TRADES).map(([k, t]) => `<option value="${k}">Modèle ${t.name}</option>`).join("")}</select><button class="pill-btn" id="tpl-apply">${ui.tplConfirm ? "Confirmer ?" : "Charger"}</button></div>
-      <p class="hint">Un modèle remplace ton catalogue par un catalogue type de ce métier, à adapter avec tes prix.</p>
-      <div>${S.catalogue.map(i => `<div class="cat-item" data-cat="${i.id}">
-        <div class="cat-top"><input class="field" id="c-l-${i.id}" data-cf="label" value="${esc(i.label)}" aria-label="Prestation">
-          <select id="c-u-${i.id}" data-cf="unit" aria-label="Unité">${["m²", "m", "pce", "h", "forfait"].map(u => `<option ${u === i.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
-          <input class="field price" id="c-p-${i.id}" data-cf="price" inputmode="decimal" value="${i.price}" aria-label="Prix CHF">
-          <button class="del" data-delcat="${i.id}" aria-label="Supprimer">×</button></div>
-        <input class="field note" id="c-n-${i.id}" data-cf="note" value="${esc(i.note || "")}" placeholder="Règle pour l'IA (facultatif)" aria-label="Règle"></div>`).join("")}</div>
-      <button class="btn ghost" id="add-cat">+ Ajouter une prestation</button>
-      <div class="room-actions"><label class="pill-btn primary" for="oldquote-in">${ICONS.cam}<span>${ui.catBusy ? "Lecture en cours…" : "Importer un ancien devis (photo)"}</span></label><input class="file-in" type="file" accept="image/*" id="oldquote-in"></div>
-      <p class="hint">L'IA lit la photo d'un ancien devis et propose des prestations. Tu choisis lesquelles ajouter : un prix d'un ancien chantier n'est pas forcément ton tarif standard.</p>
-      ${ui.catSugg.length ? `<div class="ai"><span class="ai-tag">Prestations proposées</span>${ui.catSugg.map((s, i) => `<div class="sugg-item"><span>${esc(s.label)} · ${chf(num(s.price))}/${esc(s.unit)}</span><button class="mini" data-addsugg="${i}">Ajouter</button></div>`).join("")}</div>` : ""}
-    </div>
+    <button class="btn primary" id="save-all">Enregistrer mes données</button>
+    <p class="hint" id="save-status" style="text-align:center">${ui.savedAt ? `✓ Enregistré à ${new Date(ui.savedAt).toLocaleTimeString("fr-CH", { hour: "2-digit", minute: "2-digit" })}` : "Tes changements sont aussi enregistrés automatiquement."}</p>
+    <div class="section-t">Autres réglages</div>
     ${SHOW_TESTS ? evalPanel() : `<div class="panel"><h3>Assistant IA</h3>${speedSelect()}</div>`}
     <div class="panel"><h3>Mes données</h3>
       <p class="hint">Tout est enregistré sur cet ordinateur, dans le dossier <code>data/</code> de DevisFlow, avec une sauvegarde par jour (30 jours) dans <code>data/sauvegardes/</code>.</p>
@@ -1446,14 +1469,29 @@ function viewSettings() {
       <button class="btn ghost" id="reset-all">${b2.confirming ? "Confirmer : tout remettre à zéro ?" : "Remettre les exemples (efface tout)"}</button>
     </div>`;
 }
+// pdf.js est chargé seulement quand on importe un PDF.
+async function pdfPages(file, max = 3) {
+  if (!window.pdfjsLib) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise, out = [];
+  for (let i = 1; i <= Math.min(max, pdf.numPages); i++) {
+    const page = await pdf.getPage(i), vp = page.getViewport({ scale: 2 }), c = document.createElement("canvas");
+    c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise; out.push(c.toDataURL("image/jpeg", 0.85));
+  }
+  return out;
+}
 async function importOldQuote(file) {
-  if (!sample || !imgOK) { toast("La lecture de photos a besoin de l'assistant IA (clé API dans .env)."); return; }
-  ui.catBusy = true; render();
+  if (!sample) { toast("L'import a besoin de l'assistant IA (clé API dans .env)."); return; }
+  ui.catBusy = true; ui.catMode = "manual"; render();
+  const ask = `Voici la liste de prix ou un ancien devis d'une entreprise suisse (métier : ${S.company.trade || "?"}). Liste chaque prestation avec son unité et son prix unitaire en CHF hors TVA, et une règle courte si le document en donne une (ex. « 2 couches incluses », « matériel compris »). Réponds uniquement avec un JSON : [{"label":"...","unit":"m²|m|pce|h|forfait","price":12.5,"note":""}]. N'invente rien d'illisible.`;
   try {
-    const res = await sample.json(`Voici la photo d'un ancien devis d'un artisan suisse. Liste les prestations avec leur unité et leur prix unitaire en CHF hors TVA. Réponds uniquement avec un JSON : [{"label":"...","unit":"m²|m|pce|h|forfait","price":12.5}]. N'invente rien d'illisible.`, { images: [file], modelTier: "default" });
-    ui.catSugg = (Array.isArray(res) ? res : []).filter(x => x && x.label).slice(0, 15);
-    if (!ui.catSugg.length) toast("Je n'ai rien trouvé de lisible sur cette photo.");
-  } catch (e) { toast("La lecture n'a pas marché, réessaie avec une photo plus nette."); }
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name), isText = /^text\//.test(file.type) || /\.(txt|csv)$/i.test(file.name);
+    let res;
+    if (isText) res = await sample.json(ask + "\n\nDOCUMENT :\n" + (await file.text()).slice(0, 20000), {});
+    else { if (!imgOK) throw new Error("images"); res = await sample.json(ask, { images: isPdf ? await pdfPages(file) : [file] }); }
+    ui.catSugg = (Array.isArray(res) ? res : []).filter(x => x && x.label).slice(0, 40);
+    if (!ui.catSugg.length) toast("Je n'ai rien trouvé de lisible dans ce document.");
+  } catch (e) { toast("La lecture n'a pas marché. Essaie une photo plus nette, ou saisis à la main."); }
   ui.catBusy = false; render();
 }
 
@@ -1799,11 +1837,20 @@ function bind() {
   all("[data-color]", b => b.onclick = () => { S.template.color = b.dataset.color; save(); render(); });
   const lg = document.getElementById("logo-in"); if (lg) lg.onchange = async () => { if (lg.files[0]) { S.company.logo = await shrink(lg.files[0], 400, true); save(); render(); } };
   on("logo-del", () => { S.company.logo = ""; save(); render(); });
-  all("[data-cat] [data-cf]", inp => { const h = () => { const c = catItem(inp.closest("[data-cat]").dataset.cat); c[inp.dataset.cf] = inp.dataset.cf === "price" ? num(inp.value) : inp.value; save(); }; inp.oninput = h; inp.onchange = h; });
+  all("[data-cat] [data-cf]", inp => { const h = () => { const c = catItem(inp.closest("[data-cat]").dataset.cat); c[inp.dataset.cf] = inp.dataset.cf === "price" ? (inp.value.trim() === "" ? "" : num(inp.value)) : inp.value; ui.savedAt = null; const st = document.getElementById("save-status"); if (st) st.textContent = "Tes changements sont aussi enregistrés automatiquement."; save(); }; inp.oninput = h; inp.onchange = h; });
   all("[data-delcat]", b => b.onclick = () => { S.catalogue = S.catalogue.filter(c => c.id !== b.dataset.delcat); save(); render(); });
-  on("add-cat", () => { S.catalogue.push({ id: "c" + uid(), label: "Nouvelle prestation", unit: "m²", price: 0, note: "" }); save(); render(); });
+  on("add-cat", () => { S.catalogue.push({ id: "c" + uid(), label: "", unit: "m²", price: "", note: "" }); save(); render(); const l = document.querySelectorAll('[data-cf="label"]'); if (l.length) l[l.length - 1].focus(); });
+  on("cat-manual", () => { ui.catMode = "manual"; if (!S.catalogue.length) S.catalogue.push({ id: "c" + uid(), label: "", unit: "m²", price: "", note: "" }); render(); });
+  on("addsugg-all", () => { ui.catSugg.splice(0).forEach(x => S.catalogue.push({ id: "c" + uid(), label: String(x.label), unit: ["m²", "m", "pce", "h", "forfait"].includes(x.unit) ? x.unit : "forfait", price: num(x.price), note: x.note ? String(x.note) : "" })); S.catalogue = S.catalogue.filter(c => String(c.label).trim() || num(c.price)); save(); render(); toast("Ajouté au catalogue"); });
+  on("save-all", async () => {
+    S.catalogue = S.catalogue.filter(c => String(c.label).trim()); S.catalogue.forEach(c => c.price = num(c.price));
+    const noPrice = S.catalogue.filter(c => !c.price).length;
+    clearTimeout(saveT); await pushSave();
+    if (ui.saveErr) return;
+    ui.savedAt = Date.now(); render(); toast(noPrice ? `Enregistré ✓ · ${noPrice} prestation(s) sans prix` : "Données enregistrées ✓");
+  });
   const oq = document.getElementById("oldquote-in"); if (oq) oq.onchange = () => { if (oq.files[0]) importOldQuote(oq.files[0]); };
-  all("[data-addsugg]", b => b.onclick = () => { const s = ui.catSugg.splice(+b.dataset.addsugg, 1)[0]; S.catalogue.push({ id: "c" + uid(), label: String(s.label), unit: ["m²", "m", "pce", "h", "forfait"].includes(s.unit) ? s.unit : "forfait", price: num(s.price), note: "Importé d'un ancien devis" }); save(); render(); toast("Ajouté au catalogue"); });
+  all("[data-addsugg]", b => b.onclick = () => { const s = ui.catSugg.splice(+b.dataset.addsugg, 1)[0]; S.catalogue.push({ id: "c" + uid(), label: String(s.label), unit: ["m²", "m", "pce", "h", "forfait"].includes(s.unit) ? s.unit : "forfait", price: num(s.price), note: s.note ? String(s.note) : "" }); S.catalogue = S.catalogue.filter(c => String(c.label).trim() || num(c.price)); save(); render(); toast("Ajouté au catalogue"); });
   on("reset-blank", () => {
     if (!b2.blank) { b2.blank = true; document.getElementById("reset-blank").textContent = "Confirmer : tout effacer et partir de zéro ?"; return; }
     const keep = { aiSpeed: S.aiSpeed, template: S.template };

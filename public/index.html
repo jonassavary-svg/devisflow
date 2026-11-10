@@ -678,13 +678,13 @@ const dayText = (ts) => ts ? new Date(ts).toLocaleDateString("fr-CH", DAYFMT) : 
 function nowText() { const n = new Date(); return dayText(n) + ", " + n.toLocaleTimeString("fr-CH", { hour: "2-digit", minute: "2-digit" }); }
 function dossierForAgent(d) {
   d.messages.forEach(m => { if (!m.id) m.id = uid(); });
-  return { dossier_id: d.id, quote_no: qno(d), client: d.client, title: d.title, status: d.status, status_label: (STATUS[d.status] || {}).label || d.status, source: d.source,
+  return { dossier_id: d.id, quote_no: qno(d), client: d.client, site_address: d.site || "(même que le client)", title: d.title, status: d.status, status_label: (STATUS[d.status] || {}).label || d.status, source: d.source,
   created_on: dayText(d.created), visit: d.visit || null, quote_sent_on: dayText(d.sentAt), relance_due_on: d.status === "envoye" && d.sentAt ? dayText(d.sentAt + S.defaults.relanceDays * DAY) : null,
   photos: (d.photos || []).length, facts: d.facts, missing: d.missing,
-  quote: { lines: linesForAgent(d), discount_percent: num(d.quote.discount), price_type: qopt(d, "priceType"), validity_days: qopt(d, "validityDays"), notes: qopt(d, "notes"), totals: totals(d) },
+  quote: { lines: linesForAgent(d), discount_percent: num(d.quote.discount), price_type: qopt(d, "priceType"), validity_days: qopt(d, "validityDays"), notes: qopt(d, "notes"), period: d.quote.period || null, totals: totals(d) },
   messages: d.messages.map(m => ({ message_id: m.id, kind: m.kind, subject: m.subject, status: m.status, body: String(m.body || "").slice(0, 1500) })) }; }
 function companyForAgent() {
-  return `ENTREPRISE : ${S.company.name}, métier : ${S.company.trade || "?"}, ${S.company.address}. Le devis est rangé par : ${S.partLabel || "Pièce"} (champ room). Tél. ${S.company.phone || "?"}, email ${S.company.email || "?"}, IDE ${S.company.ide || "?"}. TVA : ${S.vat.liable ? "assujettie " + S.vat.rate + " %" : "non assujettie"}.
+  return `ENTREPRISE : ${S.company.name}, métier : ${S.company.trade || "?"}, ${S.company.address}. Le devis est rangé par : ${S.partLabel || "Pièce"} (champ room). Tél. ${S.company.phone || "?"}, email ${S.company.email || "?"}, IDE ${S.company.ide || "?"}. Responsable : ${S.company.contact || "?"}. Tarif régie : ${S.company.regie ? S.company.regie + " CHF/h" : "non indiqué"}. TVA : ${S.vat.liable ? "assujettie " + S.vat.rate + " %" : "non assujettie"}.
 Conditions par défaut : prix ${S.defaults.priceType}, validité des devis ${S.defaults.validityDays} jours, paiement : ${S.defaults.payment} Relance proposée après ${S.defaults.relanceDays} jours. Remarque type sur les devis : ${S.defaults.notes}
 Emails : ${S.email.address === "tu" ? "tutoyer" : "vouvoyer"} le client. Signature :\n${S.email.signature}
 Consignes de l'artisan : ${S.aiNotes || "aucune"}
@@ -715,11 +715,11 @@ function makeTools(target, isHome, convo = null) {
     { name: "get_catalogue", description: "Price catalogue: id, label, unit, price CHF, note (pricing rule written by the artisan, follow it).", execute: () => S.catalogue },
     { name: "get_dossier", description: "Full current dossier: client, facts, missing info, quote lines with line_id, discount, options, totals, message drafts.", execute: () => dossierForAgent(need()) },
     { name: "update_dossier", description: "Updates the dossier: client fields, title, add facts, replace the missing list, status (nouveau, visite, chiffrage, envoye, accepte, refuse), visit (text like 'jeudi 9h').",
-      inputSchema: { type: "object", properties: { client_name: { type: "string" }, place: { type: "string" }, address: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, title: { type: "string" },
+      inputSchema: { type: "object", properties: { client_name: { type: "string" }, place: { type: "string" }, address: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, site_address: { type: "string", description: "Work site address, only if different from the client's address (e.g. client is a régie or an owner)" }, title: { type: "string" },
         add_facts: { type: "array", items: { type: "string" } }, missing: { type: "array", items: { type: "string" } }, status: { type: "string" }, visit: { type: "string" } } },
       execute: (i) => { const d = need();
         if (i.client_name) d.client.name = String(i.client_name);
-        ["place", "address", "phone", "email"].forEach(k => { if (i[k]) d.client[k] = String(i[k]); });
+        ["place", "address", "phone", "email"].forEach(k => { if (i[k]) d.client[k] = String(i[k]); }); if (i.site_address) d.site = String(i.site_address);
         if (i.title) d.title = String(i.title); d.facts.push(...strArr(i.add_facts)); if (i.missing !== undefined) d.missing = strArr(i.missing);
         if (STATUS[i.status]) { d.status = i.status; if (i.status === "envoye" && !d.sentAt) d.sentAt = Date.now(); } if (i.visit) d.visit = String(i.visit);
         act(d, "Dossier mis à jour"); refresh(); return { ok: true }; } },
@@ -757,13 +757,14 @@ function makeTools(target, isHome, convo = null) {
       inputSchema: { type: "object", properties: { line_id: { type: "string" }, position: { type: "number" } }, required: ["line_id", "position"] },
       execute: (i) => { const d = need(); const idx = d.quote.lines.findIndex(x => x.id === String(i.line_id)); if (idx < 0) throw new Error("Unknown line_id.");
         snap(d); const [l] = d.quote.lines.splice(idx, 1); d.quote.lines.splice(Math.max(0, Math.min(d.quote.lines.length, Number(i.position) - 1)), 0, l); act(d, `↕ ${l.label}`); refresh(); return { ok: true }; } },
-    { name: "set_quote_options", description: "Sets quote-level options for THIS quote only: discount_percent (0 to remove), price_type ('ferme' or 'estimatif'), validity_days, notes (remark printed on the quote).",
-      inputSchema: { type: "object", properties: { discount_percent: { type: "number" }, price_type: { type: "string", enum: ["ferme", "estimatif"] }, validity_days: { type: "number" }, notes: { type: "string" } } },
+    { name: "set_quote_options", description: "Sets quote-level options for THIS quote only: discount_percent (0 to remove), price_type ('ferme' or 'estimatif'), validity_days, notes (remark printed on the quote), period (when the work is planned, only as the artisan said it, e.g. 'semaine 48, environ 3 jours').",
+      inputSchema: { type: "object", properties: { discount_percent: { type: "number" }, price_type: { type: "string", enum: ["ferme", "estimatif"] }, validity_days: { type: "number" }, notes: { type: "string" }, period: { type: "string" } } },
       execute: (i) => { const d = need(); snap(d); const ch = [];
         if (i.discount_percent !== undefined && isFinite(Number(i.discount_percent))) { d.quote.discount = Math.max(0, Math.min(50, Number(i.discount_percent))); ch.push(`remise ${d.quote.discount} %`); }
         if (["ferme", "estimatif"].includes(i.price_type)) { d.quote.priceType = i.price_type; ch.push("prix " + i.price_type); }
         if (i.validity_days) { d.quote.validityDays = Number(i.validity_days); ch.push(`validité ${d.quote.validityDays} j`); }
         if (i.notes !== undefined) { d.quote.notes = String(i.notes); ch.push("remarque"); }
+        if (i.period !== undefined) { d.quote.period = String(i.period); ch.push("travaux prévus"); }
         act(d, "Devis : " + ch.join(", ")); refresh(); return { ok: true, ...quoteNow(d) }; } },
     { name: "save_message_draft", description: "Saves an email/SMS draft for the artisan to read, edit and send himself (you never send). kind: 'Envoi du devis', 'Relance', 'Réponse au client', 'Confirmation de visite'. Write the full body with greeting and the company signature.",
       inputSchema: { type: "object", properties: { kind: { type: "string" }, subject: { type: "string" }, body: { type: "string" } }, required: ["kind", "body"] },
@@ -790,10 +791,10 @@ function makeTools(target, isHome, convo = null) {
     { name: "list_dossiers", description: "All dossiers (id, client, place, title, status). Check it before creating a dossier to avoid duplicates.",
       execute: () => D.map(d => ({ dossier_id: d.id, client: d.client.name, place: d.client.place, title: d.title, status: d.status })) },
     { name: "create_dossier", description: "Creates a new client dossier and makes it the target of the other tools. Only facts actually given; missing = what is needed to quote.",
-      inputSchema: { type: "object", properties: { client_name: { type: "string" }, place: { type: "string" }, address: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, title: { type: "string" },
+      inputSchema: { type: "object", properties: { client_name: { type: "string" }, place: { type: "string" }, address: { type: "string" }, phone: { type: "string" }, email: { type: "string" }, site_address: { type: "string", description: "Work site address, only if different from the client's address" }, title: { type: "string" },
         source: { type: "string", description: "WhatsApp, SMS, Email, Appel, Visite, Photos" }, facts: { type: "array", items: { type: "string" } }, missing: { type: "array", items: { type: "string" } }, status: { type: "string", enum: ["nouveau", "visite", "chiffrage"] } }, required: ["client_name", "title"] },
       execute: (i) => { const d = { id: "d" + uid(), no: nextNo(), client: { name: String(i.client_name), place: String(i.place || ""), address: String(i.address || ""), phone: String(i.phone || ""), email: String(i.email || "") },
-        title: String(i.title), status: STATUS[i.status] ? i.status : "nouveau", source: String(i.source || "Message"), created: Date.now(), facts: strArr(i.facts), missing: strArr(i.missing), photos: [...ui.pendingUrls], chat: [], quote: { lines: [], discount: 0, priceType: null, validityDays: null, notes: null }, messages: [] };
+        site: String(i.site_address || ""), title: String(i.title), status: STATUS[i.status] ? i.status : "nouveau", source: String(i.source || "Message"), created: Date.now(), facts: strArr(i.facts), missing: strArr(i.missing), photos: [...ui.pendingUrls], chat: [], quote: { lines: [], discount: 0, priceType: null, validityDays: null, notes: null }, messages: [] };
         act(d, `Nouveau dossier créé (${d.source})`); D.unshift(d); ui.target = d.id; ui.targetLen = 0; return { dossier_id: d.id }; } },
     { name: "save_note", description: "Saves a note for the artisan to read later, INSTEAD of a dossier. Use it when the artisan asks for a note or a reminder ('note ça', 'pour plus tard', 'rappelle-moi'), or when no client can be identified yet. title: 2 to 5 words, like 'Devis Gérard'.",
       inputSchema: { type: "object", properties: { title: { type: "string" }, text: { type: "string", description: "The full information, cleaned up, nothing invented" } }, required: ["title", "text"] },
@@ -1199,7 +1200,7 @@ function viewDossier(d) {
   const drafts = d.messages.filter(m => m.status === "brouillon").length, c = d.client, ns = nextStep(d);
   const tabs = [["chat", "Discussion"], ["devis", "Devis"], ["messages", "Messages"], ["fiche", "Fiche"]];
   const cur = ui.dtab === "pdf" ? "devis" : ui.dtab;
-  const where = c.address || c.place;
+  const where = d.site || c.address || c.place;
   return `<button class="back" id="back">‹ Dossiers</button>
     <div class="dcard">
       <div class="dtop"><h2>${esc(c.name)}</h2><span id="dh-status">${chip(d.status)}</span></div>
@@ -1235,7 +1236,8 @@ function dFiche(d) {
       <div class="section-t" style="margin:0">Client</div>
       ${f("f-name", "Nom", c.name, "Mme / M. …")}
       <div class="grid2">${f("f-phone", "Téléphone", c.phone, "079 …", "tel")}${f("f-email", "Email", c.email, "nom@…", "email")}</div>
-      ${f("f-address", "Adresse du chantier", c.address, "Rue, NPA localité")}
+      ${f("f-address", "Adresse du client", c.address, "Rue, NPA localité")}
+      ${f("f-site", "Adresse du chantier (si différente)", d.site, "Rue, NPA localité")}
       ${f("f-place", "Localité", c.place, "Fribourg")}
     </div>
     <div class="panel">
@@ -1280,6 +1282,7 @@ function dDevis(d) {
         <label class="lab">Type de prix<select id="q-ptype"><option value="estimatif" ${qopt(d, "priceType") === "estimatif" ? "selected" : ""}>Estimatif</option><option value="ferme" ${qopt(d, "priceType") === "ferme" ? "selected" : ""}>Forfait ferme</option></select></label>
       </div>
       <label class="lab">Validité (jours)<input class="field" id="q-valid" inputmode="numeric" value="${qopt(d, "validityDays")}"></label>
+      <label class="lab">Travaux prévus (facultatif)<input class="field" id="q-period" value="${esc(d.quote.period || "")}" placeholder="Ex. semaine 48, environ 3 jours"></label>
       <label class="lab">Remarque sur le devis<textarea id="q-notes">${esc(qopt(d, "notes"))}</textarea></label>
     </details>
     <div class="sum">
@@ -1360,8 +1363,11 @@ function buildPdf(d) {
   set(7.5, "bold", mute); doc.text("CONCERNE", L, y);
   set(11.5, "bold"); const tl = doc.splitTextToSize(d.title || "", W - 88); doc.text(tl, L, y + 5.5);
   set(9, "normal", mute); doc.text(ferme ? "Prix forfaitaire ferme" : "Devis estimatif", L, y + 6.5 + tl.length * 5);
-  doc.text(`Valable jusqu'au ${validUntil}`, L, y + 11 + tl.length * 5);
-  y += 30;
+  let ly = y + 11 + tl.length * 5; doc.text(`Valable jusqu'au ${validUntil}`, L, ly);
+  const site = String(d.site || "").trim(), period = String(d.quote.period || "").trim();
+  if (site) { ly += 5; set(9, "normal", ink); const sw = doc.splitTextToSize("Lieu des travaux : " + site, W - 88); doc.text(sw, L, ly); ly += (sw.length - 1) * 4.2; }
+  if (period) { ly += 5; set(9, "normal", ink); const pw = doc.splitTextToSize("Travaux prévus : " + period, W - 88); doc.text(pw, L, ly); ly += (pw.length - 1) * 4.2; }
+  y = Math.max(y + 30, ly + 9);
   // Tableau
   const cols = { q: 128, u: 132, p: 160, m: R };
   const header = () => {
@@ -1400,12 +1406,13 @@ function buildPdf(d) {
   if (y > 235) { doc.addPage(); y = 22; }
   set(7.5, "bold", mute); doc.text("CONDITIONS", L, y); y += 5;
   set(9, "normal");
-  const cond = [ferme ? "Prix forfaitaire ferme." : "Devis estimatif : le montant final dépend des quantités réellement exécutées.", `Offre valable ${vd} jours, jusqu'au ${validUntil}.`, S.defaults.payment, qopt(d, "notes")].filter(x => String(x || "").trim());
+  const cond = [ferme ? "Prix forfaitaire ferme." : "Devis estimatif : le montant final dépend des quantités réellement exécutées.", `Offre valable ${vd} jours, jusqu'au ${validUntil}.`, S.defaults.payment, qopt(d, "notes"), num(c.regie) ? `Tarif en régie : CHF ${chf(num(c.regie))} par heure${S.vat.liable ? ", hors TVA" : ""}.` : ""].filter(x => String(x || "").trim());
   cond.forEach(x => { const w = doc.splitTextToSize("• " + x, W); doc.text(w, L, y); y += w.length * 4.5 + 1; });
   // Signatures
-  y += 12; if (y > 262) { doc.addPage(); y = 40; }
+  y += 12; if (y > 258) { doc.addPage(); y = 40; }
   set(8.5, "normal", mute); doc.text(`Pour ${c.name || "l'entreprise"}`, L, y); doc.text("Bon pour accord, date et signature du client", 112, y);
   doc.setDrawColor(150); doc.setLineWidth(0.2); doc.line(L, y + 14, L + 68, y + 14); doc.line(112, y + 14, R, y + 14);
+  if (c.contact) { set(9, "normal", ink); doc.text(c.contact, L, y + 19); }
   // Pied de page sur chaque page
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
@@ -1475,6 +1482,7 @@ function viewSettings() {
   return `<div><h2>Paramètres</h2><p class="sub">Ce que tu règles ici s'applique à tous tes devis, et l'IA s'en sert pour travailler.</p></div>
     <div class="panel"><h3>Mon entreprise</h3>
       <label class="lab">Nom<input class="field" id="s-name" data-co="name" value="${esc(c.name)}"></label>
+      <label class="lab">Responsable (signe les devis)<input class="field" id="s-contact" data-co="contact" value="${esc(c.contact || "")}" placeholder="Prénom Nom"></label>
       <div class="grid2"><label class="lab">Métier<input class="field" id="s-trade" data-co="trade" value="${esc(c.trade)}"></label>
         <label class="lab">Devis rangé par<input class="field" id="s-part" value="${esc(S.partLabel || "Pièce")}" placeholder="Pièce, zone, étage…"></label></div>
       <label class="lab">Adresse<input class="field" id="s-address" data-co="address" value="${esc(c.address)}"></label>
@@ -1496,6 +1504,7 @@ function viewSettings() {
       <div class="grid2"><label class="lab">Type de prix<select id="s-ptype"><option value="estimatif" ${S.defaults.priceType === "estimatif" ? "selected" : ""}>Estimatif</option><option value="ferme" ${S.defaults.priceType === "ferme" ? "selected" : ""}>Forfait ferme</option></select></label>
         <label class="lab">Validité (jours)<input class="field" id="s-valid" data-def="validityDays" inputmode="numeric" value="${S.defaults.validityDays}"></label></div>
       <label class="lab">Conditions de paiement<input class="field" id="s-pay" data-def="payment" value="${esc(S.defaults.payment)}"></label>
+      <label class="lab">Tarif en régie, CHF par heure (facultatif)<input class="field" id="s-regie" data-co="regie" inputmode="decimal" value="${esc(c.regie || "")}" placeholder="Ex. 75"></label>
       <label class="lab">Remarque type sur les devis<textarea id="s-notes" data-def="notes">${esc(S.defaults.notes)}</textarea></label>
       <label class="lab">Proposer une relance après (jours)<input class="field" id="s-rel" data-def="relanceDays" inputmode="numeric" value="${S.defaults.relanceDays}"></label>
     </div>
@@ -1875,7 +1884,7 @@ function bind() {
       d.quote.lines.push(c ? { id: uid(), room, label: c.label, unit: c.unit, qty: c.unit === "forfait" ? 1 : "", price: c.price, missingQty: c.unit !== "forfait", missingPrice: false } : { id: uid(), room, label: "Nouvelle prestation", unit: "forfait", qty: 1, price: 0, missingPrice: true });
       if (["nouveau", "visite"].includes(d.status)) d.status = "chiffrage"; save(); render(); };
     const qi = (id, fn) => { const el = document.getElementById(id); if (el) { el.onfocus = () => snapshot(d); el.oninput = el.onchange = () => { fn(el.value); updateTotals(d); }; } };
-    qi("q-disc", v => d.quote.discount = Math.max(0, Math.min(50, num(v)))); qi("q-ptype", v => d.quote.priceType = v); qi("q-valid", v => d.quote.validityDays = num(v) || null); qi("q-notes", v => d.quote.notes = v);
+    qi("q-disc", v => d.quote.discount = Math.max(0, Math.min(50, num(v)))); qi("q-ptype", v => d.quote.priceType = v); qi("q-valid", v => d.quote.validityDays = num(v) || null); qi("q-notes", v => d.quote.notes = v); qi("q-period", v => d.quote.period = v);
     on("pdf", () => makePdf(d));
     if (ui.dtab === "pdf") showPdfPreview(d);
     on("mark-sent", () => { d.status = "envoye"; d.sentAt = Date.now(); act(d, "Devis marqué comme envoyé. Relance proposée dans " + S.defaults.relanceDays + " jours."); save(); render(); toast("Statut : devis envoyé"); });
@@ -1887,7 +1896,7 @@ function bind() {
     on("ns-dict", () => { ui.dtab = "chat"; render(); onMic(); });
     const fi = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = el.onchange = () => { fn(el.value); save(); }; };
     fi("f-name", v => d.client.name = v || "Client à préciser"); fi("f-phone", v => d.client.phone = v.trim()); fi("f-email", v => d.client.email = v.trim());
-    fi("f-address", v => d.client.address = v); fi("f-place", v => d.client.place = v); fi("f-title", v => d.title = v); fi("f-visit", v => d.visit = v);
+    fi("f-address", v => d.client.address = v); fi("f-site", v => d.site = v); fi("f-place", v => d.client.place = v); fi("f-title", v => d.title = v); fi("f-visit", v => d.visit = v);
     const fs = document.getElementById("f-status"); if (fs) fs.onchange = () => { d.status = fs.value; if (fs.value === "envoye" && !d.sentAt) d.sentAt = Date.now(); act(d, "Statut : " + STATUS[fs.value].label); save(); render(); };
     all("[data-delfact]", b => b.onclick = () => { d.facts.splice(+b.dataset.delfact, 1); save(); render(); });
     all("[data-delmiss]", b => b.onclick = () => { const x = d.missing.splice(+b.dataset.delmiss, 1)[0]; act(d, "Réglé : " + x); save(); render(); });
@@ -1933,7 +1942,7 @@ function bind() {
   on("reset-blank", () => {
     if (!b2.blank) { b2.blank = true; document.getElementById("reset-blank").textContent = "Confirmer : tout effacer et partir de zéro ?"; return; }
     const keep = { aiSpeed: S.aiSpeed, template: S.template };
-    S = Object.assign(clone(DEFAULT_SETTINGS), keep, { company: { name: "", trade: "", address: "", ide: "", phone: "", email: "", logo: "" }, catalogue: [], aiNotes: "", tests: [], lastEval: null, partLabel: "Pièce",
+    S = Object.assign(clone(DEFAULT_SETTINGS), keep, { company: { name: "", trade: "", address: "", ide: "", phone: "", email: "", logo: "", contact: "", regie: "", iban: "" }, catalogue: [], aiNotes: "", tests: [], lastEval: null, partLabel: "Pièce",
       defaults: { validityDays: 30, payment: "Paiement à 30 jours net.", priceType: "estimatif", relanceDays: 5, notes: "" }, email: { address: "vous", signature: "" } });
     D = []; N = []; ui.homeChat = []; ui.undo = {}; ui.evalResults = {}; b2.blank = false; save(); go("settings"); toast("Tout est vide : commence par ton entreprise.");
   });

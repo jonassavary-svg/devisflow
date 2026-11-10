@@ -35,6 +35,13 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
 
 Sans clé API, l'app fonctionne quand même (dossiers, devis, PDF), mais sans l'assistant IA.
 
+## Comment l'utiliser
+
+- **Pendant la journée** : onglet **Notes**, « Nouvelle note » ou « Dicter une note ». Écris ce que tu vois chez le client. La note s'enregistre toute seule et l'IA lui donne un nom (ex. « Devis Gérard »).
+- **Le soir** : ouvre la note, relis ou corrige, puis « Créer le dossier avec l'IA ». L'IA crée le dossier, remplit le devis avec tes tarifs et prépare le message d'envoi.
+- **Dans le dossier** : Discussion (demande à l'IA de modifier), Devis (modifie toi-même), PDF (vérifie), Messages (ouvre dans Mail, WhatsApp ou SMS, puis « C'est envoyé »).
+- **Sur l'Accueil** : écris, dicte ou envoie une photo. « Envoyer à l'IA » crée ou complète un dossier ; « Garder en note » l'enregistre pour plus tard.
+
 ## Où sont mes données ?
 
 - Dans le dossier `data/` de DevisFlow (`data/devisflow.json`).

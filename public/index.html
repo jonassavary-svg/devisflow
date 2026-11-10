@@ -308,6 +308,15 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .checks .ok { color: var(--ok); } .checks .ko { color: var(--warn); }
 details summary { cursor: pointer; }
 code { font-family: var(--mono, monospace); font-size: .9em; }
+.note-card { display: block; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font: inherit; color: var(--ink); }
+.note-card .card-top { gap: 8px; margin-bottom: 4px; }
+.note-prev { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 13px; }
+.note-title { font: 700 18px var(--display); margin: 10px 0 8px; }
+.note-text { width: 100%; min-height: 240px; font-size: 16px; line-height: 1.5; }
+.thumb-wrap { position: relative; display: inline-block; }
+.thumb-wrap .del { position: absolute; top: -6px; right: -6px; background: var(--surface); border-radius: 50%; }
+.send-row a.mini { text-decoration: none; display: inline-flex; align-items: center; }
+.btn svg { width: 16px; height: 16px; vertical-align: -3px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 </style>
 </head>
 <body>
@@ -329,7 +338,7 @@ code { font-family: var(--mono, monospace); font-size: .9em; }
       <div class="who" id="who"></div>
     </div>
     <main class="view" id="view"></main>
-    <nav class="tabs" id="tabs" aria-label="Navigation" style="grid-template-columns:repeat(3,1fr)"></nav>
+    <nav class="tabs" id="tabs" aria-label="Navigation" style="grid-template-columns:repeat(4,1fr)"></nav>
   </div>
   <p class="foot">Version locale : tes données sont enregistrées sur cet ordinateur (dossier data/). Dictée : Chrome, Edge ou Safari.</p>
 </div>
@@ -337,6 +346,7 @@ code { font-family: var(--mono, monospace); font-size: .9em; }
 
 <script>
 const ICONS = {
+  note: '<svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9H3z"/><path d="M9 20v-6h6v6"/></svg>',
   inbox: '<svg viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
@@ -403,12 +413,13 @@ function load(k, d) {
 const clone = (o) => JSON.parse(JSON.stringify(o));
 let S = Object.assign(clone(DEFAULT_SETTINGS), load("df5-settings", DEFAULT_SETTINGS));
 let D = load("df5-dossiers", SEED);
+let N = (SERVER_DATA && Array.isArray(SERVER_DATA.notes)) ? SERVER_DATA.notes : (() => { try { const b = JSON.parse(localStorage.getItem("df-backup")); if (b && Array.isArray(b.notes)) return b.notes; } catch (e) {} return []; })();
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(pushSave, 400); }
 async function pushSave() {
   saveT = null;
   if (ui.evalRunning) { saveT = setTimeout(pushSave, 1000); return; } // pendant les tests, S est une copie temporaire
-  const body = JSON.stringify({ settings: S, dossiers: D, savedAt: Date.now() });
+  const body = JSON.stringify({ settings: S, dossiers: D, notes: N, savedAt: Date.now() });
   try { localStorage.setItem("df-backup", body); } catch (e) {}
   try {
     const r = await fetch("/api/data", { method: "PUT", headers: { "content-type": "application/json" }, body });
@@ -418,7 +429,7 @@ async function pushSave() {
 }
 window.addEventListener("pagehide", () => {
   if (!saveT || ui.evalRunning) return; clearTimeout(saveT); saveT = null;
-  try { navigator.sendBeacon("/api/data", new Blob([JSON.stringify({ settings: S, dossiers: D, savedAt: Date.now() })], { type: "application/json" })); } catch (e) {}
+  try { navigator.sendBeacon("/api/data", new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N, savedAt: Date.now() })], { type: "application/json" })); } catch (e) {}
 });
 
 const ui = { mode: "artisan", tab: "home", dossierId: null, dtab: "chat", filter: "tous", thinking: false, draft: "", pasteMode: false, pendingImages: [], pendingUrls: [], choices: [], speak: false, autoSend: false,
@@ -473,6 +484,9 @@ if (window.claude && claude.use) {
   claude.use("dictation").then(d => {
     dict = d; if (!d) return;
     d.onFinal(({ text }) => {
+      const n = ui.tab === "notes" && curNote();
+      if (n) { n.text = n.text ? n.text + text : text.trimStart(); n.updated = Date.now(); save();
+        const t = document.getElementById("note-text"); if (t) t.value = n.text; const p = document.getElementById("partial"); if (p) p.textContent = ""; return; }
       ui.draft = ui.draft ? ui.draft + text : text.trimStart();
       const ta = document.getElementById("ask"); if (ta) ta.value = ui.draft;
       const p = document.getElementById("partial"); if (p) p.textContent = "";
@@ -503,7 +517,7 @@ function renderMic() {
 function onMic() {
   if (!dict) return;
   if (dictState !== "idle") { dict.stop().then(() => { if (ui.autoSend && ui.draft.trim()) sendCurrent(); }).catch(() => {}); return; }
-  ui.autoSend = true;
+  ui.autoSend = !(ui.tab === "notes" && ui.noteId);
   dict.start().catch(e => { if (e && e.code === "not_granted") toast("Micro refusé : écris ou utilise le micro du clavier."); else if (e && e.code === "unavailable") { dict = null; render(); } });
   renderMic();
 }
@@ -605,6 +619,9 @@ function makeTools(target, isHome) {
       execute: (i) => { const d = { id: "d" + uid(), no: nextNo(), client: { name: String(i.client_name), place: String(i.place || ""), address: String(i.address || ""), phone: String(i.phone || ""), email: String(i.email || "") },
         title: String(i.title), status: STATUS[i.status] ? i.status : "nouveau", source: String(i.source || "Message"), created: Date.now(), facts: strArr(i.facts), missing: strArr(i.missing), photos: [...ui.pendingUrls], chat: [], quote: { lines: [], discount: 0, priceType: null, validityDays: null, notes: null }, messages: [] };
         act(d, `Nouveau dossier créé (${d.source})`); D.unshift(d); ui.target = d.id; ui.targetLen = 0; return { dossier_id: d.id }; } },
+    { name: "save_note", description: "Saves a note for the artisan to read later, INSTEAD of a dossier. Use it when the artisan asks for a note or a reminder ('note ça', 'pour plus tard', 'rappelle-moi'), or when no client can be identified yet. title: 2 to 5 words, like 'Devis Gérard'.",
+      inputSchema: { type: "object", properties: { title: { type: "string" }, text: { type: "string", description: "The full information, cleaned up, nothing invented" } }, required: ["title", "text"] },
+      execute: (i) => { const n = newNote(String(i.text), String(i.title).slice(0, 60)); n.photos = [...ui.pendingUrls]; ui.savedNote = n.id; save(); return { ok: true, note_id: n.id }; } },
     { name: "open_dossier", description: "Targets an existing dossier (when the message is about a known client).", inputSchema: { type: "object", properties: { dossier_id: { type: "string" } }, required: ["dossier_id"] },
       execute: (i) => { const d = dossier(String(i.dossier_id)); if (!d) throw new Error("Unknown dossier"); ui.target = d.id; ui.targetLen = d.chat.length; d.photos.push(...ui.pendingUrls); return dossierForAgent(d); } }
   );
@@ -619,6 +636,7 @@ Règles strictes :
 - Surface au sol ≠ surface murale. La préparation des murs a la même surface que la peinture des murs.
 - « Tarif habituel » sans article au catalogue : demande le prix.
 - Remise, type de prix, validité, remarque : set_quote_options (pour ce devis seulement). Si l'artisan fait un réglage qui pourrait servir à tous ses devis, propose de le garder par défaut et n'appelle set_default qu'après son accord.
+- Dès que le devis a ses lignes et qu'il ne manque ni quantité ni prix, prépare aussi le brouillon « Envoi du devis » avec save_message_draft s'il n'existe pas encore : l'artisan n'a plus qu'à contrôler et envoyer.
 - Emails et SMS : rédige-les avec save_message_draft (ton et signature de l'entreprise). Tu n'envoies jamais rien et tu ne promets ni prix ni délai sans l'artisan.
 - Mets à jour le dossier (faits, infos manquantes, statut) quand tu apprends quelque chose.
 - Ne redemande pas une information connue. Quand ta question a des réponses typiques, appelle propose_choices.
@@ -627,7 +645,7 @@ Règles strictes :
 async function runAgent(history, d, isHome, images) {
   const tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome);
   const ctx = isHome
-    ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier (open_dossier si le client existe, sinon create_dossier), puis traite la demande.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, title: x.title, status: x.status })))}`
+    ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier (open_dossier si le client existe, sinon create_dossier), puis traite la demande. Si l'artisan demande une note ou un rappel pour plus tard, ou si aucun client n'est identifiable, utilise save_note au lieu de créer un dossier. Une note de l'artisan qui décrit une visite avec des mesures : crée le dossier ET remplis le devis.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, title: x.title, status: x.status })))}`
     : `\n\nDOSSIER OUVERT : ${JSON.stringify(dossierForAgent(d))}`;
   history[history.length - 1].content = ctx.trim()
     + (images.length ? `\n\n${images.length} photo(s) jointe(s) : utilise seulement ce qui est utile, sans deviner de mesures.` : "")
@@ -649,7 +667,7 @@ async function ask(d, override) {
   const chat = isHome ? ui.homeChat : d.chat;
   ui.pendingUrls.forEach(u => chat.push({ role: "photo", url: u }));
   chat.push({ role: "user", text });
-  ui.thinking = true; ui.target = null; refresh();
+  ui.thinking = true; ui.target = null; ui.savedNote = null; refresh();
   let reply;
   if (sample) {
     const hist = chat.filter(m => m.role === "user" || m.role === "assistant").slice(-14).map(m => ({ role: m.role, content: m.text }));
@@ -667,6 +685,7 @@ async function ask(d, override) {
       speak(reply); return;
     }
     ui.homeChat.push({ role: "assistant", text: reply || "C'est noté." });
+    if (ui.savedNote) { ui.savedNote = null; toast("Enregistré dans tes notes"); }
   } else d.chat.push({ role: "assistant", text: reply || "C'est noté." });
   save(); refresh(); speak(reply);
 }
@@ -682,6 +701,97 @@ function offlineAgent(d, text, isHome) {
   const tools = makeTools(() => d, false), add = tools.find(t => t.name === "add_line");
   if (m) { add.execute({ room: "Pièce", item_id: "prep", qty: num(m[1]) }); add.execute({ room: "Pièce", item_id: "paint", qty: num(m[1]) }); }
   return "Assistant IA non activé : j'ai ajouté ce que j'ai reconnu. Ajoute ta clé API dans le fichier .env pour l'assistant complet (voir LISEZMOI.md).";
+}
+
+/* ================= Notes ================= */
+// Notes rapides de la journée (écrites ou dictées), transformées en dossier par l'IA le soir.
+const note = (id) => N.find(n => n.id === id);
+const curNote = () => ui.noteId ? note(ui.noteId) : null;
+const noteTitle = (n) => n.title || (n.text.trim().split(/\s+/).slice(0, 5).join(" ") || "Note sans titre");
+function newNote(text, title) {
+  const n = { id: "n" + uid(), title: title || "", text: text || "", photos: [], created: Date.now(), updated: Date.now(), dossierId: null };
+  N.unshift(n); save(); return n;
+}
+async function nameNote(n) {
+  if (!sample || n.title || n.text.trim().length < 15 || n.naming) return;
+  n.naming = true;
+  try {
+    const r = await sample([{ role: "user", content: "Donne un titre très court (2 à 5 mots) à cette note d'un artisan, du type « Devis Gérard » ou « Salle de bain Mme Rey ». Réponds uniquement avec le titre, sans guillemets.\n\nNOTE :\n" + n.text.slice(0, 2000) }], {});
+    const t = (r.text || "").replace(/^["«\s]+|["»\s.]+$/g, "").slice(0, 60);
+    if (t && !n.title) { n.title = t; save(); if (ui.tab === "notes") { const el = document.getElementById("note-title"); if (el && !el.value) el.value = t; else if (!ui.noteId) render(); } }
+  } catch (e) {}
+  n.naming = false;
+}
+function viewNotes() {
+  const n = curNote();
+  if (n) return noteEditor(n);
+  return `<div><h2>Notes</h2><p class="sub">Note ou dicte tes visites et appels pendant la journée. Le soir, ouvre une note et l'IA en fait un dossier avec le devis.</p></div>
+    <div class="btn-row"><button class="btn primary" id="note-new">+ Nouvelle note</button>${dict ? `<button class="btn ghost" id="note-dictate">${ICONS.mic} Dicter une note</button>` : ""}</div>
+    <div class="section-t">${N.length} note${N.length > 1 ? "s" : ""}</div>
+    <div>${N.length ? N.map(x => `<button class="note-card" data-note="${x.id}">
+      <div class="card-top"><b>${esc(noteTitle(x))}</b>${x.dossierId && dossier(x.dossierId) ? `<span class="chip ok">Dossier créé</span>` : `<span class="hint">${ago(x.updated)}</span>`}</div>
+      <span class="note-prev">${esc(x.text.slice(0, 140)) || "<i>Vide</i>"}</span>${x.photos.length ? `<span class="hint">${x.photos.length} photo(s)</span>` : ""}</button>`).join("")
+      : `<p class="empty">Aucune note. Appuie sur « Nouvelle note » pendant une visite ou après un appel.</p>`}</div>`;
+}
+function noteEditor(n) {
+  const d = n.dossierId && dossier(n.dossierId);
+  return `<button class="link" id="note-back">‹ Toutes les notes</button>
+    <input class="field note-title" id="note-title" value="${esc(n.title)}" placeholder="Nom de la note, ex. Devis Gérard" aria-label="Nom de la note">
+    <div class="partial" id="partial"></div>
+    <textarea id="note-text" class="note-text" placeholder="Ce que tu as vu ou entendu : client, adresse, pièces, surfaces, travaux, délais…">${esc(n.text)}</textarea>
+    ${n.photos.length ? `<div class="thumbs">${n.photos.map((u, i) => `<span class="thumb-wrap"><img src="${u}" alt="Photo"><button class="del" data-delphoto="${i}" aria-label="Retirer la photo">×</button></span>`).join("")}</div>` : ""}
+    <div class="toolbar">
+      ${dict ? `<button class="pill-btn" id="mic">${ICONS.mic}<span>Parler</span></button>` : ""}
+      <label class="pill-btn" for="note-photo">${ICONS.cam}<span>Photo</span></label><input class="file-in" type="file" accept="image/*" multiple id="note-photo">
+      <span class="hint" style="margin-left:auto">Enregistré automatiquement</span>
+    </div>
+    ${d ? `<div class="warnbox" style="background:var(--ok-soft)">Dossier créé : <b>${esc(d.client.name)}</b> · ${esc(d.title)}</div>
+      <button class="btn primary" id="note-open">Ouvrir le dossier</button>`
+      : `<button class="btn primary" id="note-convert" ${ui.thinking ? "disabled" : ""}>${ui.thinking ? "L'IA prépare le dossier…" : "Créer le dossier avec l'IA"}</button>
+      <p class="hint">L'IA crée le dossier du client, remplit le devis avec tes tarifs, prépare le message d'envoi et te pose ses questions s'il manque une info.</p>`}
+    <button class="btn ghost" id="note-del">${ui.delNote ? "Confirmer : supprimer la note ?" : "Supprimer la note"}</button>`;
+}
+async function convertNote(n) {
+  if (ui.thinking) return;
+  if (!n.text.trim() && !n.photos.length) { toast("La note est vide."); return; }
+  ui.pendingImages = n.photos.slice(0, 4); ui.pendingUrls = n.photos.slice();
+  ui.thinking = true; render(); ui.thinking = false;
+  await ask(null, `[Note de l'artisan : ${noteTitle(n)}]\n${n.text.trim() || "Voici des photos."}`);
+  const t = ui.dossierId && dossier(ui.dossierId);
+  if (t) { n.dossierId = t.id; save(); }
+  else { go("home"); toast("Regarde la réponse de l'assistant"); }
+}
+function bindNotes() {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("note-new", () => { const n = newNote(); ui.noteId = n.id; render(); const t = document.getElementById("note-text"); if (t) t.focus(); });
+  on("note-dictate", () => { const n = newNote(); ui.noteId = n.id; render(); onMic(); });
+  document.querySelectorAll("[data-note]").forEach(b => b.onclick = () => { ui.noteId = b.dataset.note; ui.delNote = false; render(); });
+  const n = curNote(); if (!n) return;
+  on("note-back", () => { if (dictState !== "idle" && dict) dict.stop().catch(() => {}); if (!n.text.trim() && !n.title && !n.photos.length) N = N.filter(x => x !== n); else nameNote(n); ui.noteId = null; save(); render(); });
+  const ti = document.getElementById("note-title"); if (ti) ti.oninput = () => { n.title = ti.value; n.updated = Date.now(); save(); };
+  const tx = document.getElementById("note-text"); if (tx) tx.oninput = () => { n.text = tx.value; n.updated = Date.now(); save(); };
+  const ph = document.getElementById("note-photo");
+  if (ph) ph.onchange = async () => { for (const f of [...ph.files].slice(0, 6)) n.photos.push(await shrink(f, 1200)); n.updated = Date.now(); save(); render(); };
+  document.querySelectorAll("[data-delphoto]").forEach(b => b.onclick = () => { n.photos.splice(+b.dataset.delphoto, 1); save(); render(); });
+  on("note-convert", () => convertNote(n));
+  on("note-open", () => openDossier(n.dossierId, "devis"));
+  on("note-del", () => { if (ui.delNote) { N = N.filter(x => x !== n); ui.noteId = null; ui.delNote = false; save(); render(); toast("Note supprimée"); } else { ui.delNote = true; document.getElementById("note-del").textContent = "Confirmer : supprimer la note ?"; } });
+}
+function keepAsNote() {
+  const ta = document.getElementById("ask"); const text = (ta ? ta.value : ui.draft).trim();
+  if (!text && !ui.pendingUrls.length) { toast("Écris ou dicte d'abord quelque chose."); return; }
+  const n = newNote(text); n.photos = ui.pendingUrls.slice(); ui.pendingImages = []; ui.pendingUrls = []; ui.draft = ""; ui.pasteMode = false; if (ta) ta.value = "";
+  save(); render(); toast("Enregistré dans tes notes"); nameNote(n);
+}
+// Envoi : liens vers Mail, WhatsApp et SMS avec le texte déjà rempli.
+function intlPhone(p) { let d = String(p || "").replace(/[^\d+]/g, ""); if (d.startsWith("+")) return d.slice(1); if (d.startsWith("00")) return d.slice(2); if (d.startsWith("0")) return "41" + d.slice(1); return d; }
+function sendLinks(d, m) {
+  const subj = encodeURIComponent(m.subject || ""), body = encodeURIComponent(m.body || ""), phone = intlPhone(d.client.phone);
+  const out = [];
+  if (d.client.email) out.push(`<a class="mini" target="_blank" href="mailto:${encodeURIComponent(d.client.email)}?subject=${subj}&body=${body}">Ouvrir dans Mail</a>`);
+  if (phone.length >= 9) out.push(`<a class="mini" target="_blank" href="https://wa.me/${phone}?text=${body}">WhatsApp</a>`, `<a class="mini" href="sms:+${phone}&body=${body}">SMS</a>`);
+  if (d.quote.lines.length && /devis|relance/i.test(m.kind)) out.push(`<button class="mini" data-mpdf="${m.id}">Télécharger le PDF</button>`);
+  return out.join("");
 }
 
 /* ================= Rendu : discussion ================= */
@@ -703,7 +813,8 @@ function composer(placeholder) {
       <label class="pill-btn" for="photo-in">${ICONS.cam}<span>Photo</span></label>
       <input class="file-in" type="file" accept="image/*" multiple id="photo-in">
       ${tts ? `<button class="pill-btn" id="speak-toggle">${ui.speak ? "Voix : oui" : "Voix : non"}</button>` : ""}
-      <button class="pill-btn primary" id="send-ask" style="margin-left:auto" ${ui.thinking ? "disabled" : ""}>Envoyer</button>
+      ${ui.mode === "artisan" && ui.tab === "home" ? `<button class="pill-btn" id="keep-note" style="margin-left:auto">${ICONS.note}<span>Garder en note</span></button>` : ""}
+      <button class="pill-btn primary" id="send-ask" ${ui.mode === "artisan" && ui.tab === "home" ? "" : 'style="margin-left:auto"'} ${ui.thinking ? "disabled" : ""}>${ui.mode === "artisan" && ui.tab === "home" ? "Envoyer à l'IA" : "Envoyer"}</button>
     </div>
     ${dict ? "" : `<p class="hint">Sur téléphone, le micro du clavier permet de dicter.</p>`}
   </div>`;
@@ -739,7 +850,7 @@ function viewHome() {
     <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés</p></div>
     <div class="big-new">
       <h3>Nouvelle demande ou info</h3>
-      <p class="sub" style="margin-top:-6px">Dicte, colle un message ou envoie des photos. L'assistant crée ou complète le bon dossier.</p>
+      <p class="sub" style="margin-top:-6px">Dicte, colle un message ou envoie des photos. « Envoyer à l'IA » crée ou complète le dossier ; « Garder en note » l'enregistre pour plus tard.</p>
       <div class="entry">
         ${dict ? `<button class="entry-btn" id="big-mic">${ICONS.mic}<b>Dicter</b><span>Après un appel ou une visite</span></button>` : ""}
         <button class="entry-btn" id="big-paste">${ICONS.paste}<b>Coller</b><span>WhatsApp, SMS, email</span></button>
@@ -910,7 +1021,7 @@ async function makePdf(d) {
 
 /* ================= Messages ================= */
 function dMessages(d) {
-  return `<p class="sub">Les emails et SMS préparés par l'IA. Relis, modifie, copie dans ta messagerie et joins le PDF. Rien n'est envoyé automatiquement.</p>
+  return `<p class="sub">Les messages préparés par l'IA. Relis, puis ouvre-les dans Mail, WhatsApp ou SMS (texte déjà rempli). Pour un email, télécharge le PDF et joins-le. Rien ne part sans toi.</p>
     <div class="toolbar"><button class="mini" data-quick="0">+ Email d'envoi du devis</button><button class="mini" data-quick="1">+ Relance</button><button class="mini" data-quickx="visit">+ Confirmation de visite</button></div>
     ${d.messages.length ? d.messages.map(m => `<div class="msgcard">
       <div class="card-top"><span class="section-t">${esc(m.kind)}</span><span class="chip ${m.status === "envoyé" ? "ok" : "visit"}">${m.status === "envoyé" ? "Envoyé" : "Brouillon"}</span></div>
@@ -918,7 +1029,9 @@ function dMessages(d) {
         ? `<input class="field" id="m-subj" value="${esc(m.subject)}" aria-label="Objet"><textarea id="m-body">${esc(m.body)}</textarea><div class="toolbar"><button class="mini" data-msave="${m.id}">Enregistrer</button></div>`
         : `${m.subject ? `<div class="subj">${esc(m.subject)}</div>` : ""}<div class="body">${esc(m.body)}</div>
            <div class="dmeta">À : ${esc(d.client.email || d.client.phone || "adresse à compléter")} ${d.quote.lines.length && m.kind.includes("devis") ? `· pièce jointe : devis-${qno(d)}.pdf` : ""}</div>
-           <div class="toolbar"><button class="mini" data-mcopy="${m.id}">Copier le texte</button><button class="mini" data-medit="${m.id}">Modifier</button>${m.status !== "envoyé" ? `<button class="mini" data-msent="${m.id}">Marquer comme envoyé</button>` : ""}<button class="mini" data-mdel="${m.id}">Supprimer</button></div>`}
+           ${m.status !== "envoyé" ? `<div class="toolbar send-row">${sendLinks(d, m)}</div>` : ""}
+           <div class="toolbar"><button class="mini" data-mcopy="${m.id}">Copier le texte</button><button class="mini" data-medit="${m.id}">Modifier</button><button class="mini" data-mdel="${m.id}">Supprimer</button></div>
+           ${m.status !== "envoyé" ? `<button class="btn primary" data-msent="${m.id}">C'est envoyé ✓</button>` : ""}`}
     </div>`).join("") : `<p class="empty">Aucun message pour l'instant.</p>`}`;
 }
 function fallbackMessage(d, kind) {
@@ -1131,17 +1244,17 @@ function renderTabs() {
   if (ui.mode === "client") { tabs.hidden = true; return; }
   tabs.hidden = false;
   const urgent = todos().filter(x => x.n.warn).length;
-  tabs.innerHTML = [["home", "Accueil", ICONS.home], ["dossiers", "Dossiers", ICONS.inbox], ["settings", "Paramètres", ICONS.gear]].map(([k, l, ic]) =>
+  tabs.innerHTML = [["home", "Accueil", ICONS.home], ["notes", "Notes", ICONS.note], ["dossiers", "Dossiers", ICONS.inbox], ["settings", "Paramètres", ICONS.gear]].map(([k, l, ic]) =>
     `<button data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ""}>${ic}${l}${k === "home" && urgent ? '<span class="dot"></span>' : ""}</button>`).join("");
   tabs.querySelectorAll("button").forEach(b => b.onclick = () => go(b.dataset.tab));
 }
-function go(tab, id) { ui.tab = tab; ui.dossierId = id || null; ui.choices = []; ui.editMsg = null; render(); window.scrollTo({ top: 0 }); }
+function go(tab, id) { if (tab !== "notes") ui.noteId = null; ui.tab = tab; ui.dossierId = id || null; ui.choices = []; ui.editMsg = null; render(); window.scrollTo({ top: 0 }); }
 function openDossier(id, dtab) { ui.dtab = dtab || "chat"; go("dossiers", id); if (ui.dtab === "chat") setTimeout(() => window.scrollTo({ top: document.body.scrollHeight }), 30); }
 function render() {
   $("#who").innerHTML = ui.mode === "artisan" ? esc(S.company.name) + "<br>" + esc(S.company.trade) : "Site de l'artisan<br>vue client";
   renderTabs();
   const v = $("#view");
-  v.innerHTML = ui.mode === "client" ? viewClient() : ui.tab === "home" ? viewHome() : ui.tab === "settings" ? viewSettings() : viewDossiers();
+  v.innerHTML = ui.mode === "client" ? viewClient() : ui.tab === "home" ? viewHome() : ui.tab === "settings" ? viewSettings() : ui.tab === "notes" ? viewNotes() : viewDossiers();
   bind(); renderMic();
 }
 function setMode(m) { ui.mode = m; ui.choices = []; ui.draft = ""; $("#v-artisan").setAttribute("aria-pressed", m === "artisan"); $("#v-client").setAttribute("aria-pressed", m === "client"); render(); }
@@ -1149,11 +1262,12 @@ $("#v-artisan").onclick = () => setMode("artisan");
 $("#v-client").onclick = () => setMode("client");
 
 function bind() {
+  if (ui.tab === "notes" && ui.mode === "artisan") bindNotes();
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   const all = (sel, fn) => document.querySelectorAll(sel).forEach(fn);
   const d = ui.dossierId ? cur() : null;
   // Composer
-  on("mic", onMic); on("big-mic", onMic); on("send-ask", sendCurrent);
+  on("mic", onMic); on("big-mic", onMic); on("send-ask", sendCurrent); on("keep-note", keepAsNote);
   on("speak-toggle", () => { ui.speak = !ui.speak; if (!ui.speak && tts) tts.stop(); render(); });
   on("big-paste", () => { ui.pasteMode = true; const t = document.getElementById("ask"); t.placeholder = "Colle ici le message du client…"; t.focus(); });
   const askEl = document.getElementById("ask");
@@ -1198,6 +1312,7 @@ function bind() {
     all("[data-msent]", b => b.onclick = () => { const m = d.messages.find(x => x.id === b.dataset.msent); m.status = "envoyé";
       if (m.kind.toLowerCase().includes("envoi") && ["nouveau", "visite", "chiffrage"].includes(d.status)) { d.status = "envoye"; d.sentAt = Date.now(); }
       if (m.kind.toLowerCase().includes("relance")) d.sentAt = Date.now(); save(); render(); toast("Marqué comme envoyé"); });
+    all("[data-mpdf]", b => b.onclick = () => makePdf(d));
     all("[data-mdel]", b => b.onclick = () => { d.messages = d.messages.filter(x => x.id !== b.dataset.mdel); save(); render(); });
   }
   // Settings
@@ -1217,7 +1332,7 @@ function bind() {
   all("[data-addsugg]", b => b.onclick = () => { const s = ui.catSugg.splice(+b.dataset.addsugg, 1)[0]; S.catalogue.push({ id: "c" + uid(), label: String(s.label), unit: ["m²", "m", "pce", "h", "forfait"].includes(s.unit) ? s.unit : "forfait", price: num(s.price), note: "Importé d'un ancien devis" }); save(); render(); toast("Ajouté au catalogue"); });
   on("reset-all", () => { if (b2.confirming) { S = clone(DEFAULT_SETTINGS); D = clone(SEED); ui.homeChat = []; ui.undo = {}; save(); b2.confirming = false; go("home"); toast("Exemples remis"); } else { b2.confirming = true; const e = document.getElementById("reset-all"); e.textContent = "Confirmer : tout remettre à zéro ?"; } });
   on("clear-dossiers", () => { if (b2.clearing) { D = []; ui.homeChat = []; ui.undo = {}; save(); b2.clearing = false; go("home"); toast("Dossiers effacés"); } else { b2.clearing = true; const e = document.getElementById("clear-dossiers"); e.textContent = "Confirmer : effacer tous les dossiers ?"; } });
-  on("export-data", () => downloads.save({ filename: `devisflow-${new Date().toISOString().slice(0, 10)}.json`, data: new Blob([JSON.stringify({ settings: S, dossiers: D }, null, 2)], { type: "application/json" }) }));
+  on("export-data", () => downloads.save({ filename: `devisflow-${new Date().toISOString().slice(0, 10)}.json`, data: new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N }, null, 2)], { type: "application/json" }) }));
   on("run-tests", runTests);
   document.querySelectorAll("[data-deltest]").forEach(b => b.onclick = () => { S.tests = (S.tests || []).filter(t => t.id !== b.dataset.deltest); if (ui.evalResults) delete ui.evalResults[b.dataset.deltest]; save(); render(); });
   if (ui.tab === "settings" && ui.mode === "artisan" && Date.now() - (ui.usageAt || 0) > 30000) { ui.usageAt = Date.now(); loadUsage(); }

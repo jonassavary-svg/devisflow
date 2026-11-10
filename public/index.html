@@ -281,7 +281,8 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .msgcard .body { white-space: pre-line; font-size: 14px; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
 .msgcard textarea { min-height: 140px; }
 /* Document preview */
-.paper-wrap { overflow-x: auto; background: var(--surface-2); border-radius: 12px; padding: 12px; }
+.paper-wrap { overflow-x: auto; background: var(--surface-2); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.pdf-page { display: block; width: 100%; height: auto; background: #fff; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
 .paper { background: #fff; color: #1d2329; width: 100%; min-width: 300px; aspect-ratio: auto; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.15); padding: 18px 16px 22px; font: 400 10.5px/1.45 Helvetica, Arial, sans-serif; display: flex; flex-direction: column; gap: 10px; }
 .paper .ph { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .paper .band { margin: -18px -16px 4px; padding: 14px 16px; color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-radius: 3px 3px 0 0; }
@@ -1327,7 +1328,7 @@ function docHtml(d) {
 function dPdf(d) {
   if (!d.quote.lines.length) return `<p class="empty">Le PDF apparaîtra ici dès que le devis aura des lignes.</p>`;
   return `<div class="toolbar"><button class="mini" data-dtab="devis">‹ Retour au devis</button><span class="hint" style="flex:1;text-align:right">Modèle « ${S.template.style} » · Paramètres</span></div>
-    <div class="paper-wrap">${docHtml(d)}</div>
+    <div class="paper-wrap" id="pdf-view"><p class="hint" style="text-align:center;margin:40px 0">Préparation de l'aperçu…</p></div>
     ${downloads ? `<button class="btn primary" id="pdf">Télécharger le PDF</button>` : `<p class="hint">Le téléchargement n'est pas disponible.</p>`}`;
 }
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
@@ -1415,6 +1416,27 @@ function buildPdf(d) {
     doc.text(`Page ${i} / ${pages}`, R, 286, { align: "right" });
   }
   return doc;
+}
+// L'aperçu affiche le vrai PDF (mêmes pages que le fichier téléchargé).
+let pdfViewJob = 0;
+async function showPdfPreview(d) {
+  const box = document.getElementById("pdf-view"); if (!box) return;
+  const job = ++pdfViewJob;
+  try {
+    if (!window.jspdf) throw new Error("jspdf");
+    const data = buildPdf(d).output("arraybuffer");
+    await loadPdfjs();
+    const pdf = await pdfjsLib.getDocument({ data }).promise, imgs = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i), vp = page.getViewport({ scale: 2 }), c = document.createElement("canvas");
+      c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      imgs.push(c.toDataURL("image/png"));
+    }
+    if (job !== pdfViewJob || !document.body.contains(box)) return;
+    box.innerHTML = imgs.map((u, i) => `<img class="pdf-page" src="${u}" alt="Page ${i + 1} du devis">`).join("");
+  } catch (e) {
+    if (job === pdfViewJob && document.body.contains(box)) box.innerHTML = docHtml(d);
+  }
 }
 async function makePdf(d) {
   if (!window.jspdf) { toast("Le générateur PDF n'a pas pu se charger."); return; }
@@ -1522,10 +1544,13 @@ function viewSettings() {
       <button class="btn ghost" id="reset-all">${b2.confirming ? "Confirmer : tout remettre à zéro ?" : "Remettre les exemples (efface tout)"}</button>
     </div>`;
 }
-// pdf.js est chargé seulement quand on importe un PDF.
+// pdf.js (copie locale) est chargé seulement quand on en a besoin : import d'un PDF ou aperçu du devis.
+async function loadPdfjs() {
+  if (!window.pdfjsLib) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "/vendor/pdf.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+}
 async function pdfPages(file, max = 3) {
-  if (!window.pdfjsLib) await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  await loadPdfjs();
   const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise, out = [];
   for (let i = 1; i <= Math.min(max, pdf.numPages); i++) {
     const page = await pdf.getPage(i), vp = page.getViewport({ scale: 2 }), c = document.createElement("canvas");
@@ -1852,6 +1877,7 @@ function bind() {
     const qi = (id, fn) => { const el = document.getElementById(id); if (el) { el.onfocus = () => snapshot(d); el.oninput = el.onchange = () => { fn(el.value); updateTotals(d); }; } };
     qi("q-disc", v => d.quote.discount = Math.max(0, Math.min(50, num(v)))); qi("q-ptype", v => d.quote.priceType = v); qi("q-valid", v => d.quote.validityDays = num(v) || null); qi("q-notes", v => d.quote.notes = v);
     on("pdf", () => makePdf(d));
+    if (ui.dtab === "pdf") showPdfPreview(d);
     on("mark-sent", () => { d.status = "envoye"; d.sentAt = Date.now(); act(d, "Devis marqué comme envoyé. Relance proposée dans " + S.defaults.relanceDays + " jours."); save(); render(); toast("Statut : devis envoyé"); });
     on("mark-accepted", () => { d.status = "accepte"; act(d, "Devis accepté"); save(); render(); });
     on("mark-refused", () => { d.status = "refuse"; act(d, "Devis refusé"); save(); render(); });

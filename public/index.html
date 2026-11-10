@@ -372,6 +372,12 @@ details.opts[open] summary { margin-bottom: 4px; }
 .checks .ok { color: var(--ok); } .checks .ko { color: var(--warn); }
 details summary { cursor: pointer; }
 code { font-family: var(--mono, monospace); font-size: .9em; }
+.swipe { position: relative; overflow: hidden; border-radius: 14px; margin-bottom: 8px; }
+.list .swipe { margin-bottom: 0; }
+.swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 100px; border: 0; border-radius: 14px; background: #C0392B; color: #fff; font: 700 14px var(--body); cursor: pointer; padding-left: 12px; }
+.swipe > .card, .swipe > .note-card { position: relative; margin-bottom: 0 !important; touch-action: pan-y; transition: transform .2s ease; user-select: none; -webkit-user-select: none; }
+.swipe.dragging > .card, .swipe.dragging > .note-card { transition: none; }
+.toast button { margin-left: 10px; background: none; border: 0; color: inherit; font: 700 13.5px var(--body); text-decoration: underline; cursor: pointer; }
 .note-card { display: block; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; font: inherit; color: var(--ink); }
 .note-card .card-top { gap: 8px; margin-bottom: 4px; }
 .note-prev { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 13px; }
@@ -507,7 +513,34 @@ const round05 = (n) => Math.round(n * 20) / 20;
 const num = (v) => { const n = parseFloat(String(v).replace(",", ".").replace(/'/g, "")); return isFinite(n) ? n : 0; };
 const uid = () => Math.random().toString(36).slice(2, 8);
 const strArr = (v) => Array.isArray(v) ? v.map(String).filter(Boolean) : (v ? [String(v)] : []);
-function toast(t) { const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => el.hidden = true, 3000); }
+function toast(t, undoFn) {
+  const el = $("#toast"); el.textContent = t; el.hidden = false; clearTimeout(toast._t);
+  if (undoFn) { const b = document.createElement("button"); b.textContent = "Annuler"; b.onclick = () => { el.hidden = true; undoFn(); }; el.appendChild(b); }
+  toast._t = setTimeout(() => el.hidden = true, undoFn ? 6000 : 3000);
+}
+// Glisser vers la gauche pour faire apparaître « Supprimer » (doigt ou souris).
+function bindSwipe() {
+  const OPEN = -100;
+  const closeAll = (except) => document.querySelectorAll(".swipe.open").forEach(w => { if (w !== except) { w.classList.remove("open"); w.children[1].style.transform = ""; } });
+  document.querySelectorAll(".swipe").forEach(w => {
+    const front = w.children[1]; let x0 = 0, y0 = 0, dx = 0, drag = false, down = false, moved = false;
+    front.addEventListener("pointerdown", e => { down = true; drag = false; moved = false; x0 = e.clientX; y0 = e.clientY; dx = 0; });
+    front.addEventListener("pointermove", e => {
+      if (!down) return; const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!drag && Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my)) { drag = true; w.classList.add("dragging"); closeAll(w); try { front.setPointerCapture(e.pointerId); } catch (er) {} }
+      if (drag) { dx = Math.max(-140, Math.min(0, mx + (w.classList.contains("open") ? OPEN : 0))); front.style.transform = `translateX(${dx}px)`; }
+    });
+    const end = () => { if (!down) return; down = false; w.classList.remove("dragging"); if (!drag) return; moved = true;
+      const open = dx < OPEN / 2; w.classList.toggle("open", open); front.style.transform = open ? `translateX(${OPEN}px)` : ""; };
+    front.addEventListener("pointerup", end); front.addEventListener("pointercancel", end);
+    front.addEventListener("click", e => { if (moved || w.classList.contains("open")) { e.stopImmediatePropagation(); e.preventDefault(); if (!moved) { w.classList.remove("open"); front.style.transform = ""; } moved = false; } }, true);
+  });
+  document.querySelectorAll("[data-swdel]").forEach(b => b.onclick = () => {
+    const [kind, id] = b.dataset.swdel.split(":");
+    if (kind === "d") { const i = D.findIndex(x => x.id === id); if (i < 0) return; const [d] = D.splice(i, 1); save(); render(); toast(`Dossier ${d.client.name} supprimé`, () => { D.splice(i, 0, d); save(); render(); }); }
+    else { const i = N.findIndex(x => x.id === id); if (i < 0) return; const [n] = N.splice(i, 1); save(); render(); toast("Note supprimée", () => { N.splice(i, 0, n); save(); render(); }); }
+  });
+}
 function ago(ts) { const d = Math.round((Date.now() - ts) / DAY); return d <= 0 ? "aujourd'hui" : d === 1 ? "hier" : `il y a ${d} j`; }
 const coCity = () => (S.company.address.split(/\d{4}\s*/).pop() || "").trim() || "Fribourg";
 const fmtDate = (ts) => new Date(ts).toLocaleDateString("fr-CH");
@@ -846,9 +879,9 @@ function viewNotes() {
   return `<div><h2>Notes</h2><p class="sub">Note ou dicte tes visites et appels pendant la journée. Le soir, ouvre une note et l'IA en fait un dossier avec le devis.</p></div>
     <div class="btn-row"><button class="btn primary" id="note-new">+ Nouvelle note</button>${dict ? `<button class="btn ghost" id="note-dictate">${ICONS.mic} Dicter une note</button>` : ""}</div>
     <div class="section-t">${N.length} note${N.length > 1 ? "s" : ""}</div>
-    <div>${N.length ? N.map(x => `<button class="note-card" data-note="${x.id}">
+    <div>${N.length ? N.map(x => `<div class="swipe"><button class="swipe-del" data-swdel="n:${x.id}">Supprimer</button><button class="note-card" data-note="${x.id}">
       <div class="card-top"><b>${esc(noteTitle(x))}${x.client ? ` <span class="hint">· ${esc(x.client)}</span>` : ""}</b>${x.dossierId && dossier(x.dossierId) ? `<span class="chip ok">Dossier créé</span>` : `<span class="hint">${ago(x.updated)}</span>`}</div>
-      <span class="note-prev">${esc(x.text.slice(0, 140)) || "<i>Vide</i>"}</span>${x.photos.length ? `<span class="hint">${x.photos.length} photo(s)</span>` : ""}</button>`).join("")
+      <span class="note-prev">${esc(x.text.slice(0, 140)) || "<i>Vide</i>"}</span>${x.photos.length ? `<span class="hint">${x.photos.length} photo(s)</span>` : ""}</button></div>`).join("") + `<p class="hint" style="text-align:center">Glisse une note vers la gauche pour la supprimer.</p>`
       : `<p class="empty">Aucune note. Appuie sur « Nouvelle note » pendant une visite ou après un appel.</p>`}</div>`;
 }
 function noteEditor(n) {
@@ -1076,11 +1109,11 @@ function viewDossiers() {
   const list = D.filter(d => f === "tous" || (f === "actifs" ? ["nouveau", "visite", "chiffrage"].includes(d.status) : d.status === f));
   return `<div><h2>Dossiers clients</h2><p class="sub">Une fiche par client : discussion, devis, PDF et messages.</p></div>
     <div class="filters">${FILTERS.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
-    <div class="list">${list.length ? list.map(d => { const n = nextAction(d); return `<button class="card" data-open="${d.id}">
+    <div class="list">${list.length ? list.map(d => { const n = nextAction(d); return `<div class="swipe"><button class="swipe-del" data-swdel="d:${d.id}">Supprimer</button><button class="card" data-open="${d.id}">
       <div class="card-top"><span class="card-title">${esc(d.client.name)}</span>${chip(d.status)}</div>
       <span class="card-sub">${esc(d.title)} · ${esc(d.client.place || "lieu ?")}</span>
       <div class="card-foot"><span class="next ${n.warn ? "warn" : ""}">${esc(n.t)}</span><span class="amount">${d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "—"}</span></div>
-    </button>`; }).join("") : `<p class="empty">Aucun dossier ici.</p>`}</div>`;
+    </button></div>`; }).join("") + `<p class="hint" style="text-align:center">Glisse un dossier vers la gauche pour le supprimer.</p>` : `<p class="empty">Aucun dossier ici.</p>`}</div>`;
 }
 const ICON_TEL = '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
 const ICON_MAIL = '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
@@ -1156,7 +1189,8 @@ function dFiche(d) {
       ${d.missing.length ? `<div class="section-t" style="margin:6px 0 0">Manque encore</div><ul class="facts">${d.missing.map((x, i) => `<li><span>${esc(x)}</span><button class="del" data-delmiss="${i}" aria-label="C'est réglé">×</button></li>`).join("")}</ul>` : ""}
     </div>
     ${d.photos.length ? `<div class="panel"><div class="section-t" style="margin:0">Photos (${d.photos.length})</div><div class="thumbs">${d.photos.map(u => `<a href="${u}" target="_blank"><img src="${u}" alt="Photo du chantier"></a>`).join("")}</div></div>` : ""}
-    <div class="meta-list"><span>Devis N° ${qno(d)} · reçu ${ago(d.created)} (${esc(d.source)})</span>${d.sentAt ? `<span>Devis envoyé le ${fmtDate(d.sentAt)}</span>` : ""}</div>`;
+    <div class="meta-list"><span>Devis N° ${qno(d)} · reçu ${ago(d.created)} (${esc(d.source)})</span>${d.sentAt ? `<span>Devis envoyé le ${fmtDate(d.sentAt)}</span>` : ""}</div>
+    <button class="btn ghost" id="del-dossier" style="color:#C0392B">Supprimer ce dossier</button>`;
 }
 function dDevis(d) {
   const t = totals(d), rooms = [...new Set(d.quote.lines.map(l => l.room))], canUndo = (ui.undo[d.id] || []).length;
@@ -1625,6 +1659,7 @@ function bind() {
   const all = (sel, fn) => document.querySelectorAll(sel).forEach(fn);
   const d = ui.dossierId ? cur() : null;
   if (ui.tab === "home" && ui.mode === "artisan") bindCapture();
+  bindSwipe();
   // Composer
   on("mic", onMic); on("send-ask", sendCurrent);
   on("speak-toggle", () => { ui.speak = !ui.speak; if (!ui.speak && tts) tts.stop(); render(); });
@@ -1663,6 +1698,7 @@ function bind() {
     on("mark-refused", () => { d.status = "refuse"; act(d, "Devis refusé"); save(); render(); });
     on("reopen", () => { d.status = "chiffrage"; save(); render(); });
     on("as-test", () => testFromDossier(d));
+    on("del-dossier", () => { const i = D.indexOf(d); if (i < 0) return; D.splice(i, 1); save(); go("dossiers"); toast(`Dossier ${d.client.name} supprimé`, () => { D.splice(i, 0, d); save(); render(); }); });
     on("ns-dict", () => { ui.dtab = "chat"; render(); onMic(); });
     const fi = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = el.onchange = () => { fn(el.value); save(); }; };
     fi("f-name", v => d.client.name = v || "Client à préciser"); fi("f-phone", v => d.client.phone = v.trim()); fi("f-email", v => d.client.email = v.trim());

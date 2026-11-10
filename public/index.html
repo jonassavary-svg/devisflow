@@ -649,7 +649,19 @@ ${S.catalogue.map(c => `- ${c.id} | ${c.label} | ${c.unit} | ${c.price}${c.note 
 function act(d, text) { d.chat.push({ role: "action", text }); }
 // Renvoyé à l'IA après chaque modification du devis : elle voit tout de suite le résultat et les points à régler.
 function quoteNow(d) { const t = totals(d); return { quote_after_this_action: { lines: d.quote.lines.length, total_ht: Math.round(t.net * 100) / 100, check: checkQuote(d) } }; }
-function makeTools(target, isHome) {
+// Consigne « proposer X » : le code refuse d'ajouter X tant que l'artisan n'en a pas parlé ou n'a pas dit oui.
+const norm = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+function proposeOnly(item) {
+  const sentences = norm(S.aiNotes).split(/[.\n;!]+/).filter(x => /propos/.test(x) && !/ajout/.test(x));
+  const stems = norm(item.label).split(/[^a-z]+/).filter(w => w.length >= 5).map(w => w.slice(0, 5));
+  return stems.length && sentences.some(x => x.split(/[^a-z]+/).some(w => stems.some(st => w.startsWith(st)))) ? stems : null;
+}
+function agreed(stems, convo) {
+  const has = (t) => { const ws = norm(t).split(/[^a-z]+/); return ws.some((w, i) => stems.some(st => w.startsWith(st)) && !ws.slice(Math.max(0, i - 3), i).some(x => /^(pas|sans|non|jamais|ni)$/.test(x))); };
+  const yes = /^\s*(oui|ok|d'accord|daccord|vas-y|vas y|go|ajoute|mets|volontiers|parfait)\b/i.test(norm(convo.user));
+  return has(convo.user) || (yes && has(convo.prevBot));
+}
+function makeTools(target, isHome, convo = null) {
   // target(): the dossier the quote tools act on
   const need = () => { const d = target(); if (!d) throw new Error("No dossier yet: call create_dossier or open_dossier first."); return d; };
   const touched = new Set();
@@ -670,6 +682,7 @@ function makeTools(target, isHome) {
       inputSchema: { type: "object", properties: { room: { type: "string" }, item_id: { type: "string" }, label: { type: "string" }, unit: { type: "string" }, qty: { type: "number" }, unit_price: { type: "number", description: "Only if the artisan stated it" }, position: { type: "number", description: "1-based, optional" } }, required: ["room"] },
       execute: (i) => { const d = need(); const c = i.item_id ? catItem(String(i.item_id)) : null;
         if (i.item_id && !c) throw new Error("Unknown item_id. Call get_catalogue.");
+        if (c && convo) { const st = proposeOnly(c); if (st && !agreed(st, convo)) throw new Error(`Not added: the artisan's instruction says to PROPOSE "${c.label}", not to add it. Ask him in your reply (propose_choices with yes/no) and add it only after he says yes.`); }
         const qk = i.qty !== undefined && i.qty !== null && isFinite(Number(i.qty)), pk = i.unit_price !== undefined && i.unit_price !== null && isFinite(Number(i.unit_price));
         const l = { id: uid(), room: String(i.room || "Général"), label: c ? c.label : String(i.label || "Prestation à préciser"), unit: c ? c.unit : String(i.unit || "forfait"), qty: qk ? Number(i.qty) : "", price: c ? c.price : (pk ? Number(i.unit_price) : 0), missingQty: !qk, missingPrice: !c && !pk };
         if (qk && Number(i.qty) <= 0) throw new Error("Quantity must be greater than 0. Leave qty empty and ask the artisan.");
@@ -796,7 +809,9 @@ function historyFor(chat, maxChars = 14000) {
   return hist;
 }
 async function runAgent(history, d, isHome, images, how = {}) {
-  let tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome);
+  const prevBot = [...history].reverse().find(m => m.role === "assistant");
+  const convo = { user: String(history[history.length - 1].content || "").replace(/^\(.*?\)\n/gm, ""), prevBot: prevBot ? String(prevBot.content) : "" };
+  let tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome, convo);
   if (how.dossier) tools = tools.filter(t => t.name !== "save_note");
   const ctx = isHome
     ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier : compare le nom, le téléphone, l'email et le lieu avec les DOSSIERS EXISTANTS (orthographe ou numéro écrit autrement = même client). Même client : open_dossier. Sinon : create_dossier. Puis traite la demande. ${how.dossier ? "L'artisan a choisi d'en faire un DOSSIER : crée-le ou complète le dossier existant, même s'il manque des infos (nom inconnu : client_name « Client à préciser », puis demande le nom)." : "Si l'artisan demande une note ou un rappel pour plus tard, ou si aucun client n'est identifiable, utilise save_note au lieu de créer un dossier."} Une note de l'artisan qui décrit une visite avec des mesures : crée le dossier ET remplis le devis.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, address: x.client.address || undefined, phone: x.client.phone || undefined, email: x.client.email || undefined, title: x.title, status: x.status, created_on: dayText(x.created) })))}`

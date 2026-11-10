@@ -1067,6 +1067,7 @@ function viewHome() {
   const acc = D.filter(d => d.status === "accepte").reduce((a, d) => a + totals(d).tot, 0);
   const saved = ui.lastNote && N.find(x => x.id === ui.lastNote);
   return `${!(window.__DF_AI && window.__DF_AI.ready) ? `<div class="warnbox"><b>Assistant IA non activé.</b> Ajoute ta clé API (Anthropic ou OpenAI) dans le fichier <code>.env</code>, puis relance l'app (voir LISEZMOI.md). Le reste de l'app fonctionne.</div>` : ""}
+    ${!S.company.name || !S.catalogue.length ? `<div class="okbox" style="background:var(--accent-soft)"><span><b>Pour commencer :</b> ${!S.company.name ? "remplis ton entreprise" : ""}${!S.company.name && !S.catalogue.length ? " et " : ""}${!S.catalogue.length ? "ton catalogue de prix (ou charge un modèle de métier)" : ""} dans Paramètres.</span><button class="pill-btn" id="go-settings">Paramètres</button></div>` : ""}
     <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés</p></div>
     <div class="start">
       <button class="start-btn" id="start-dict">${ICONS.mic}Dicter<span>Appel, visite</span></button>
@@ -1137,6 +1138,7 @@ function bindCapture() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   on("start-dict", () => startCapture("dict")); on("start-msg", () => startCapture("msg")); on("start-photo", () => startCapture("photo"));
   on("open-saved", () => { const id = ui.lastNote; ui.lastNote = null; ui.tab = "notes"; ui.dossierId = null; ui.noteId = id; render(); window.scrollTo({ top: 0 }); });
+  on("go-settings", () => go("settings"));
   on("home-clear", () => { ui.homeChat = []; ui.choices = []; render(); });
   if (!ui.cap) return;
   on("cap-cancel", async () => { await stopDictation(); ui.cap = null; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; render(); });
@@ -1439,6 +1441,8 @@ function viewSettings() {
     <div class="panel"><h3>Mes données</h3>
       <p class="hint">Tout est enregistré sur cet ordinateur, dans le dossier <code>data/</code> de DevisFlow, avec une sauvegarde par jour (30 jours) dans <code>data/sauvegardes/</code>.</p>
       <div class="btn-row"><button class="btn ghost" id="export-data">Exporter (fichier JSON)</button><button class="btn ghost" id="clear-dossiers">${b2.clearing ? "Confirmer : effacer tous les dossiers ?" : "Effacer tous les dossiers"}</button></div>
+      <button class="btn primary" id="reset-blank">${b2.blank ? "Confirmer : tout effacer et partir de zéro ?" : "Partir de zéro (entreprise vierge)"}</button>
+      <p class="hint">Efface les dossiers, les notes, le catalogue et les infos de l'entreprise, pour créer la tienne. Une sauvegarde du jour reste dans le dossier data/sauvegardes.</p>
       <button class="btn ghost" id="reset-all">${b2.confirming ? "Confirmer : tout remettre à zéro ?" : "Remettre les exemples (efface tout)"}</button>
     </div>`;
 }
@@ -1704,7 +1708,7 @@ function renderTabs() {
 function go(tab, id) { if (tab !== "notes") ui.noteId = null; ui.tab = tab; ui.dossierId = id || null; ui.choices = []; ui.editMsg = null; render(); window.scrollTo({ top: 0 }); }
 function openDossier(id, dtab) { ui.dtab = dtab || "chat"; go("dossiers", id); if (ui.dtab === "chat") setTimeout(() => window.scrollTo({ top: document.body.scrollHeight }), 30); }
 function render() {
-  $("#who").innerHTML = ui.mode === "artisan" ? esc(S.company.name) + "<br>" + esc(S.company.trade) : "Site de l'artisan<br>vue client";
+  $("#who").innerHTML = ui.mode === "artisan" ? esc(S.company.name || "Mon entreprise") + "<br>" + esc(S.company.trade) : "Site de l'artisan<br>vue client";
   renderTabs();
   const v = $("#view");
   v.innerHTML = ui.mode === "client" ? viewClient() : ui.tab === "home" ? viewHome() : ui.tab === "settings" ? viewSettings() : ui.tab === "notes" ? viewNotes() : viewDossiers();
@@ -1797,6 +1801,13 @@ function bind() {
   on("add-cat", () => { S.catalogue.push({ id: "c" + uid(), label: "Nouvelle prestation", unit: "m²", price: 0, note: "" }); save(); render(); });
   const oq = document.getElementById("oldquote-in"); if (oq) oq.onchange = () => { if (oq.files[0]) importOldQuote(oq.files[0]); };
   all("[data-addsugg]", b => b.onclick = () => { const s = ui.catSugg.splice(+b.dataset.addsugg, 1)[0]; S.catalogue.push({ id: "c" + uid(), label: String(s.label), unit: ["m²", "m", "pce", "h", "forfait"].includes(s.unit) ? s.unit : "forfait", price: num(s.price), note: "Importé d'un ancien devis" }); save(); render(); toast("Ajouté au catalogue"); });
+  on("reset-blank", () => {
+    if (!b2.blank) { b2.blank = true; document.getElementById("reset-blank").textContent = "Confirmer : tout effacer et partir de zéro ?"; return; }
+    const keep = { aiSpeed: S.aiSpeed, template: S.template };
+    S = Object.assign(clone(DEFAULT_SETTINGS), keep, { company: { name: "", trade: "", address: "", ide: "", phone: "", email: "", logo: "" }, catalogue: [], aiNotes: "", tests: [], lastEval: null, partLabel: "Pièce",
+      defaults: { validityDays: 30, payment: "Paiement à 30 jours net.", priceType: "estimatif", relanceDays: 5, notes: "" }, email: { address: "vous", signature: "" } });
+    D = []; N = []; ui.homeChat = []; ui.undo = {}; ui.evalResults = {}; b2.blank = false; save(); go("settings"); toast("Tout est vide : commence par ton entreprise.");
+  });
   on("reset-all", () => { if (b2.confirming) { S = clone(DEFAULT_SETTINGS); D = clone(SEED); ui.homeChat = []; ui.undo = {}; save(); b2.confirming = false; go("home"); toast("Exemples remis"); } else { b2.confirming = true; const e = document.getElementById("reset-all"); e.textContent = "Confirmer : tout remettre à zéro ?"; } });
   on("clear-dossiers", () => { if (b2.clearing) { D = []; ui.homeChat = []; ui.undo = {}; save(); b2.clearing = false; go("home"); toast("Dossiers effacés"); } else { b2.clearing = true; const e = document.getElementById("clear-dossiers"); e.textContent = "Confirmer : effacer tous les dossiers ?"; } });
   on("export-data", () => downloads.save({ filename: `devisflow-${new Date().toISOString().slice(0, 10)}.json`, data: new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N }, null, 2)], { type: "application/json" }) }));

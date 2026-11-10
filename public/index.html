@@ -297,6 +297,24 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .cat-item .note { font-size: 12.5px; }
 .sugg-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 13.5px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .logo-prev { max-height: 40px; max-width: 140px; object-fit: contain; background: #fff; border-radius: 6px; padding: 4px; border: 1px solid var(--line); }
+.start { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.start-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 124px; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 18px; cursor: pointer; font: 700 17px var(--display); padding: 14px 6px; min-width: 0; }
+.start-btn svg { width: 38px; height: 38px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.start-btn span { font: 400 12px var(--body); opacity: .85; text-align: center; }
+.cap { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+.cap h3 { font-size: 18px; }
+.mic.big { width: 136px; height: 136px; }
+.mic.big svg { width: 54px; height: 54px; }
+.seg, .dest { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg button, .dest button { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 14px; padding: 12px; text-align: left; font: 400 12.5px/1.35 var(--body); cursor: pointer; min-width: 0; }
+.seg button b, .dest button b { display: flex; align-items: center; gap: 6px; color: var(--ink); font: 700 15px var(--display); margin-bottom: 3px; }
+.dest button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.dest button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.dest button.primary b { color: var(--accent-ink); }
+.cap textarea { min-height: 130px; font-size: 16px; }
+label.btn { display: flex; align-items: center; justify-content: center; gap: 6px; text-align: center; }
+.okbox { background: var(--ok-soft); border-radius: 12px; padding: 10px 14px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .big-new { display: flex; flex-direction: column; gap: 10px; background: var(--accent-soft); border-radius: 16px; padding: 14px; }
 .big-new h3 { font-size: 16px; }
 .big-new .composer { background: transparent; border-top: 0; position: static; padding-top: 0; }
@@ -509,15 +527,21 @@ if (window.claude && claude.use) {
   claude.use("downloads").then(d => { downloads = d; render(); });
 }
 function renderMic() {
+  renderBigMic();
   const b = document.getElementById("mic"); if (!b) return;
   const on = dictState !== "idle";
   b.classList.toggle("listening", on);
   b.querySelector("span").textContent = on ? (dictState === "finishing" ? "Fin…" : "Stop") : "Parler";
 }
+function renderBigMic() {
+  const b = document.getElementById("cap-mic"); if (!b) return; const on = dictState !== "idle";
+  b.classList.toggle("rec", on); const t = document.getElementById("cap-mic-t");
+  if (t) t.textContent = on ? (dictState === "finishing" ? "Je termine…" : "Je t'écoute… touche pour arrêter") : "Touche le micro pour dicter";
+}
 function onMic() {
   if (!dict) return;
   if (dictState !== "idle") { dict.stop().then(() => { if (ui.autoSend && ui.draft.trim()) sendCurrent(); }).catch(() => {}); return; }
-  ui.autoSend = !(ui.tab === "notes" && ui.noteId);
+  ui.autoSend = !(ui.tab === "notes" && ui.noteId) && !ui.cap;
   dict.start().catch(e => { if (e && e.code === "not_granted") toast("Micro refusé : écris ou utilise le micro du clavier."); else if (e && e.code === "unavailable") { dict = null; render(); } });
   renderMic();
 }
@@ -690,10 +714,11 @@ function historyFor(chat, maxChars = 14000) {
   if (start > 0 && hist.length) hist[0] = { role: "user", content: "(Échanges plus anciens non montrés : les faits importants sont dans le dossier.)\n" + hist[0].content };
   return hist;
 }
-async function runAgent(history, d, isHome, images) {
-  const tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome);
+async function runAgent(history, d, isHome, images, how = {}) {
+  let tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome);
+  if (how.dossier) tools = tools.filter(t => t.name !== "save_note");
   const ctx = isHome
-    ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier : compare le nom, le téléphone, l'email et le lieu avec les DOSSIERS EXISTANTS (orthographe ou numéro écrit autrement = même client). Même client : open_dossier. Sinon : create_dossier. Puis traite la demande. Si l'artisan demande une note ou un rappel pour plus tard, ou si aucun client n'est identifiable, utilise save_note au lieu de créer un dossier. Une note de l'artisan qui décrit une visite avec des mesures : crée le dossier ET remplis le devis.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, address: x.client.address || undefined, phone: x.client.phone || undefined, email: x.client.email || undefined, title: x.title, status: x.status, created_on: dayText(x.created) })))}`
+    ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier : compare le nom, le téléphone, l'email et le lieu avec les DOSSIERS EXISTANTS (orthographe ou numéro écrit autrement = même client). Même client : open_dossier. Sinon : create_dossier. Puis traite la demande. ${how.dossier ? "L'artisan a choisi d'en faire un DOSSIER : crée-le ou complète le dossier existant, même s'il manque des infos (nom inconnu : client_name « Client à préciser », puis demande le nom)." : "Si l'artisan demande une note ou un rappel pour plus tard, ou si aucun client n'est identifiable, utilise save_note au lieu de créer un dossier."} Une note de l'artisan qui décrit une visite avec des mesures : crée le dossier ET remplis le devis.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, address: x.client.address || undefined, phone: x.client.phone || undefined, email: x.client.email || undefined, title: x.title, status: x.status, created_on: dayText(x.created) })))}`
     : `\n\nDOSSIER OUVERT (état actuel, à jour) : ${JSON.stringify(dossierForAgent(d))}${checkQuote(d).length ? `\nCONTRÔLE AUTOMATIQUE DU DEVIS, points à régler ou à signaler : ${checkQuote(d).join(" ; ")}` : ""}`;
   history[history.length - 1].content = `DATE ET HEURE : ${nowText()}\n` + ctx.trim()
     + (images.length ? `\n\n${images.length} photo(s) jointe(s) : utilise seulement ce qui est utile, sans deviner de mesures.` : "")
@@ -703,7 +728,7 @@ async function runAgent(history, d, isHome, images) {
   try { const r = await sample(history, opts); ui.lastAgent = { ms: r.ms, steps: r.steps }; return (r.text || "").trim(); }
   catch (e) { ui.agentError = (e && e.message) || "erreur"; return e && e.code === "rate_limited" ? "Je suis momentanément saturé, réessaie dans quelques secondes." : e && e.message ? "Je n'ai pas pu répondre : " + e.message : "Je n'ai pas pu répondre, réessaie."; }
 }
-async function ask(d, override) {
+async function ask(d, override, opts = {}) {
   const ta = document.getElementById("ask");
   let text = (override ?? (ta ? ta.value : ui.draft)).trim();
   const images = ui.pendingImages.slice(0, 4);
@@ -718,7 +743,7 @@ async function ask(d, override) {
   ui.thinking = true; ui.target = null; ui.savedNote = null; refresh();
   let reply;
   if (sample) {
-    reply = await runAgent(historyFor(chat), d, isHome, images);
+    reply = await runAgent(historyFor(chat), d, isHome, images, opts);
   } else reply = offlineAgent(d, text, isHome);
   ui.thinking = false; ui.pendingImages = []; ui.pendingUrls = [];
   if (isHome) {
@@ -777,26 +802,30 @@ function viewNotes() {
     <div class="btn-row"><button class="btn primary" id="note-new">+ Nouvelle note</button>${dict ? `<button class="btn ghost" id="note-dictate">${ICONS.mic} Dicter une note</button>` : ""}</div>
     <div class="section-t">${N.length} note${N.length > 1 ? "s" : ""}</div>
     <div>${N.length ? N.map(x => `<button class="note-card" data-note="${x.id}">
-      <div class="card-top"><b>${esc(noteTitle(x))}</b>${x.dossierId && dossier(x.dossierId) ? `<span class="chip ok">Dossier créé</span>` : `<span class="hint">${ago(x.updated)}</span>`}</div>
+      <div class="card-top"><b>${esc(noteTitle(x))}${x.client ? ` <span class="hint">· ${esc(x.client)}</span>` : ""}</b>${x.dossierId && dossier(x.dossierId) ? `<span class="chip ok">Dossier créé</span>` : `<span class="hint">${ago(x.updated)}</span>`}</div>
       <span class="note-prev">${esc(x.text.slice(0, 140)) || "<i>Vide</i>"}</span>${x.photos.length ? `<span class="hint">${x.photos.length} photo(s)</span>` : ""}</button>`).join("")
       : `<p class="empty">Aucune note. Appuie sur « Nouvelle note » pendant une visite ou après un appel.</p>`}</div>`;
 }
 function noteEditor(n) {
   const d = n.dossierId && dossier(n.dossierId);
   return `<button class="link" id="note-back">‹ Toutes les notes</button>
+    <span class="section-t" style="margin:0">Titre</span>
     <input class="field note-title" id="note-title" value="${esc(n.title)}" placeholder="Nom de la note, ex. Devis Gérard" aria-label="Nom de la note">
+    <span class="section-t" style="margin:0">Client</span>
+    <input class="field" id="note-client" value="${esc(n.client || "")}" placeholder="Nom du client (facultatif)" aria-label="Nom du client">
     <div class="partial" id="partial"></div>
     <textarea id="note-text" class="note-text" placeholder="Ce que tu as vu ou entendu : client, adresse, pièces, surfaces, travaux, délais…">${esc(n.text)}</textarea>
     ${n.photos.length ? `<div class="thumbs">${n.photos.map((u, i) => `<span class="thumb-wrap"><img src="${u}" alt="Photo"><button class="del" data-delphoto="${i}" aria-label="Retirer la photo">×</button></span>`).join("")}</div>` : ""}
     <div class="toolbar">
       ${dict ? `<button class="pill-btn" id="mic">${ICONS.mic}<span>Parler</span></button>` : ""}
-      <label class="pill-btn" for="note-photo">${ICONS.cam}<span>Photo</span></label><input class="file-in" type="file" accept="image/*" multiple id="note-photo">
+      <label class="pill-btn" for="note-cam">${ICONS.cam}<span>Caméra</span></label><input class="file-in" type="file" accept="image/*" capture="environment" id="note-cam">
+      <label class="pill-btn" for="note-photo"><span>Galerie</span></label><input class="file-in" type="file" accept="image/*" multiple id="note-photo">
       <span class="hint" style="margin-left:auto">Enregistré automatiquement</span>
     </div>
     ${d ? `<div class="warnbox" style="background:var(--ok-soft)">Dossier créé : <b>${esc(d.client.name)}</b> · ${esc(d.title)}</div>
       <button class="btn primary" id="note-open">Ouvrir le dossier</button>`
       : `<button class="btn primary" id="note-convert" ${ui.thinking ? "disabled" : ""}>${ui.thinking ? "L'IA prépare le dossier…" : "Créer le dossier avec l'IA"}</button>
-      <p class="hint">L'IA crée le dossier du client, remplit le devis avec tes tarifs, prépare le message d'envoi et te pose ses questions s'il manque une info.</p>`}
+      <p class="hint">L'IA crée le dossier du client, remplit le devis avec tes tarifs et te pose ses questions s'il manque une info. Tu peux encore modifier la note après.</p>`}
     <button class="btn ghost" id="note-del">${ui.delNote ? "Confirmer : supprimer la note ?" : "Supprimer la note"}</button>`;
 }
 async function convertNote(n) {
@@ -804,7 +833,7 @@ async function convertNote(n) {
   if (!n.text.trim() && !n.photos.length) { toast("La note est vide."); return; }
   ui.pendingImages = n.photos.slice(0, 4); ui.pendingUrls = n.photos.slice();
   ui.thinking = true; render(); ui.thinking = false;
-  await ask(null, `[Note de l'artisan : ${noteTitle(n)}]\n${n.text.trim() || "Voici des photos."}`);
+  await ask(null, `[Note de l'artisan : ${noteTitle(n)}]\n${n.client ? "Client : " + n.client + "\n" : ""}${n.text.trim() || "Voici des photos."}`, { dossier: true });
   const t = ui.dossierId && dossier(ui.dossierId);
   if (t) { n.dossierId = t.id; save(); }
   else { go("home"); toast("Regarde la réponse de l'assistant"); }
@@ -818,18 +847,13 @@ function bindNotes() {
   on("note-back", () => { if (dictState !== "idle" && dict) dict.stop().catch(() => {}); if (!n.text.trim() && !n.title && !n.photos.length) N = N.filter(x => x !== n); else nameNote(n); ui.noteId = null; save(); render(); });
   const ti = document.getElementById("note-title"); if (ti) ti.oninput = () => { n.title = ti.value; n.updated = Date.now(); save(); };
   const tx = document.getElementById("note-text"); if (tx) tx.oninput = () => { n.text = tx.value; n.updated = Date.now(); save(); };
-  const ph = document.getElementById("note-photo");
-  if (ph) ph.onchange = async () => { for (const f of [...ph.files].slice(0, 6)) n.photos.push(await shrink(f, 1200)); n.updated = Date.now(); save(); render(); };
+  const cl = document.getElementById("note-client"); if (cl) cl.oninput = () => { n.client = cl.value; n.updated = Date.now(); save(); };
+  ["note-photo", "note-cam"].forEach(id => { const ph = document.getElementById(id);
+    if (ph) ph.onchange = async () => { const tx2 = document.getElementById("note-text"); if (tx2) n.text = tx2.value; for (const f of [...ph.files].slice(0, 6)) n.photos.push(await shrink(f, 1200)); n.updated = Date.now(); save(); render(); }; });
   document.querySelectorAll("[data-delphoto]").forEach(b => b.onclick = () => { n.photos.splice(+b.dataset.delphoto, 1); save(); render(); });
   on("note-convert", () => convertNote(n));
   on("note-open", () => openDossier(n.dossierId, "devis"));
   on("note-del", () => { if (ui.delNote) { N = N.filter(x => x !== n); ui.noteId = null; ui.delNote = false; save(); render(); toast("Note supprimée"); } else { ui.delNote = true; document.getElementById("note-del").textContent = "Confirmer : supprimer la note ?"; } });
-}
-function keepAsNote() {
-  const ta = document.getElementById("ask"); const text = (ta ? ta.value : ui.draft).trim();
-  if (!text && !ui.pendingUrls.length) { toast("Écris ou dicte d'abord quelque chose."); return; }
-  const n = newNote(text); n.photos = ui.pendingUrls.slice(); ui.pendingImages = []; ui.pendingUrls = []; ui.draft = ""; ui.pasteMode = false; if (ta) ta.value = "";
-  save(); render(); toast("Enregistré dans tes notes"); nameNote(n);
 }
 // Envoi : liens vers Mail, WhatsApp et SMS avec le texte déjà rempli.
 function intlPhone(p) { let d = String(p || "").replace(/[^\d+]/g, ""); if (d.startsWith("+")) return d.slice(1); if (d.startsWith("00")) return d.slice(2); if (d.startsWith("0")) return "41" + d.slice(1); return d; }
@@ -861,8 +885,7 @@ function composer(placeholder) {
       <label class="pill-btn" for="photo-in">${ICONS.cam}<span>Photo</span></label>
       <input class="file-in" type="file" accept="image/*" multiple id="photo-in">
       ${tts ? `<button class="pill-btn" id="speak-toggle">${ui.speak ? "Voix : oui" : "Voix : non"}</button>` : ""}
-      ${ui.mode === "artisan" && ui.tab === "home" ? `<button class="pill-btn" id="keep-note" style="margin-left:auto">${ICONS.note}<span>Garder en note</span></button>` : ""}
-      <button class="pill-btn primary" id="send-ask" ${ui.mode === "artisan" && ui.tab === "home" ? "" : 'style="margin-left:auto"'} ${ui.thinking ? "disabled" : ""}>${ui.mode === "artisan" && ui.tab === "home" ? "Envoyer à l'IA" : "Envoyer"}</button>
+      <button class="pill-btn primary" id="send-ask" style="margin-left:auto" ${ui.thinking ? "disabled" : ""}>Envoyer</button>
     </div>
     ${dict ? "" : `<p class="hint">Sur téléphone, le micro du clavier permet de dicter.</p>`}
   </div>`;
@@ -880,11 +903,6 @@ function refresh() {
 function bindChoices() { document.querySelectorAll("[data-qr]").forEach(b => b.onclick = () => { const v = ui.choices[+b.dataset.qr]; ui.mode === "client" ? clientAsk(v) : ask(ui.dossierId ? cur() : null, v); }); }
 
 /* ================= Accueil ================= */
-const EXAMPLES = [
-  { label: "WhatsApp d'une nouvelle cliente", text: "[Message WhatsApp d'un client]\nBonjour, je voudrais repeindre les deux chambres de mon appartement à Fribourg. Une fait environ 15 m², l'autre 12 m². Est-ce possible d'avoir un devis ? Sophie Margueron" },
-  { label: "Résumé d'un appel", text: "Nouveau client, Monsieur Berset à Bulle. Il veut refaire la peinture du salon et de la cuisine. Il faut passer la semaine prochaine pour prendre les mesures. Son numéro est le 079 000 00 05." },
-  { label: "Note de visite", text: "Chez Mme Dupont, salon : 75 m² de murs, quelques fissures à reboucher, protéger le parquet. Chambre : 45 m², non pardon, 54 m² de murs." }
-];
 function todos() {
   const out = [];
   D.forEach(d => { const n = nextAction(d); if (["refuse"].includes(d.status)) return;
@@ -892,24 +910,91 @@ function todos() {
   return out.sort((a, b) => (b.n.warn - a.n.warn));
 }
 function viewHome() {
+  if (ui.cap) return viewCapture();
   const t = todos(), open = D.filter(d => ["envoye"].includes(d.status)).reduce((a, d) => a + totals(d).tot, 0);
   const acc = D.filter(d => d.status === "accepte").reduce((a, d) => a + totals(d).tot, 0);
+  const saved = ui.lastNote && N.find(x => x.id === ui.lastNote);
   return `${!(window.__DF_AI && window.__DF_AI.ready) ? `<div class="warnbox"><b>Assistant IA non activé.</b> Ajoute ta clé API (Anthropic ou OpenAI) dans le fichier <code>.env</code>, puis relance l'app (voir LISEZMOI.md). Le reste de l'app fonctionne.</div>` : ""}
     <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés</p></div>
-    <div class="big-new">
-      <h3>Nouvelle demande ou info</h3>
-      <p class="sub" style="margin-top:-6px">Dicte, colle un message ou envoie des photos. « Envoyer à l'IA » crée ou complète le dossier ; « Garder en note » l'enregistre pour plus tard.</p>
-      <div class="entry">
-        ${dict ? `<button class="entry-btn" id="big-mic">${ICONS.mic}<b>Dicter</b><span>Après un appel ou une visite</span></button>` : ""}
-        <button class="entry-btn" id="big-paste">${ICONS.paste}<b>Coller</b><span>WhatsApp, SMS, email</span></button>
-        <label class="entry-btn" for="photo-in">${ICONS.cam}<b>Photos</b><span>Chantier, captures</span></label>
-      </div>
-      ${ui.homeChat.length ? `<div class="chat" id="chat">${chatHtml(ui.homeChat)}</div>` : `<div class="chat" id="chat"></div>`}
-      ${composer("Ex. : nouveau client M. Martin à Marly, 3 chambres à repeindre…")}
-      ${!ui.homeChat.length ? `<div class="sugg"><span class="hint">Exemples à essayer :</span>${EXAMPLES.map((s, i) => `<button data-ex="${i}"><b>${esc(s.label)}</b><br>${esc(s.text.replace(/^\[.*?\]\n/, ""))}</button>`).join("")}</div>` : ""}
+    <div class="start">
+      <button class="start-btn" id="start-dict">${ICONS.mic}Dicter<span>Appel, visite</span></button>
+      <button class="start-btn" id="start-msg">${ICONS.paste}Message<span>Du client ou de toi</span></button>
+      <button class="start-btn" id="start-photo">${ICONS.cam}Photos<span>Chantier, captures</span></button>
     </div>
+    ${saved ? `<div class="okbox"><span>Enregistré dans tes notes : <b>${esc(noteTitle(saved))}</b></span><button class="pill-btn" id="open-saved">Ouvrir</button></div>` : ""}
+    ${ui.homeChat.length ? `<div class="big-new"><div class="card-top"><h3>Discussion avec l'IA</h3><button class="link" id="home-clear">Terminer</button></div>
+      <div class="chat" id="chat">${chatHtml(ui.homeChat)}</div>${composer("Réponds à l'IA…")}</div>` : ""}
     <div class="section-t">À faire</div>
     <div>${t.length ? t.map(({ d, n }) => `<button class="todo" data-open="${d.id}"><span class="dotc" style="background:var(${n.warn ? "--warn" : "--accent"})"></span><span class="todo-t"><b>${esc(n.t)}</b><span>${esc(d.client.name)} · ${esc(d.title)}</span></span><span>›</span></button>`).join("") : `<p class="empty">Rien d'urgent.</p>`}</div>`;
+}
+// Saisie depuis l'accueil : dictée, message ou photos, puis « En note » ou « En dossier ».
+function viewCapture() {
+  const c = ui.cap;
+  const head = { dict: "Dicter", msg: "Message", photo: "Photos" }[c.kind];
+  let top = "", ph = "";
+  if (c.kind === "dict") {
+    top = dict ? `<div class="mic-wrap"><button class="mic big" id="cap-mic" aria-label="Micro">${ICONS.mic}</button><b id="cap-mic-t">Touche le micro pour dicter</b></div>`
+      : `<p class="warnbox">La dictée n'est pas disponible dans ce navigateur. Utilise le micro du clavier, ou Chrome / Safari.</p>`;
+    ph = "Ce que tu dictes s'écrit ici. Tu peux corriger avant de ranger.";
+  }
+  if (c.kind === "msg") {
+    top = `<div class="seg"><button data-src="client" aria-pressed="${c.src === "client"}"><b>Message d'un client</b>WhatsApp, SMS ou email copié</button><button data-src="moi" aria-pressed="${c.src === "moi"}"><b>Mon texte</b>Ce que j'écris moi-même</button></div>
+      ${c.src === "client" && navigator.clipboard && navigator.clipboard.readText ? `<button class="pill-btn" id="cap-paste">${ICONS.paste}<span>Coller le message copié</span></button>` : ""}`;
+    ph = c.src === "client" ? "Colle ici le message du client…" : "Ex. : M. Martin à Marly, 3 chambres à repeindre, rappeler jeudi…";
+  }
+  if (c.kind === "photo") {
+    top = `<div class="btn-row"><label class="btn primary" for="cap-cam">${ICONS.cam} Prendre une photo</label><label class="btn ghost" for="cap-gal">Galerie</label></div>
+      <input class="file-in" type="file" accept="image/*" capture="environment" id="cap-cam"><input class="file-in" type="file" accept="image/*" multiple id="cap-gal">`;
+    ph = "Un mot sur ces photos (facultatif) : client, pièce, travaux…";
+  }
+  return `<button class="back" id="cap-cancel">‹ Annuler</button>
+    <div class="cap">
+      <h3>${head}</h3>
+      ${top}
+      ${ui.pendingUrls.length ? `<div class="thumbs">${ui.pendingUrls.map((u, i) => `<span class="thumb-wrap"><img src="${u}" alt="Photo"><button class="del" data-capdel="${i}" aria-label="Retirer la photo">×</button></span>`).join("")}</div>` : ""}
+      <div class="partial" id="partial"></div>
+      <textarea id="ask" placeholder="${ph}">${esc(ui.draft)}</textarea>
+      <div class="section-t" style="margin:4px 0 0">Où je le range ?</div>
+      <div class="dest">
+        <button id="dest-note"><b>${ICONS.note} En note</b>Pour plus tard. Tu la relis le soir, tu la modifies, puis tu en fais un dossier.</button>
+        <button id="dest-dossier" class="primary"><b>${ICONS.inbox} En dossier</b>L'IA crée le dossier du client (ou complète le sien) et prépare le devis.</button>
+      </div>
+    </div>`;
+}
+function capText() {
+  const ta = document.getElementById("ask"); const t = (ta ? ta.value : ui.draft).trim();
+  return t;
+}
+async function stopDictation() { if (dict && dictState !== "idle") { try { await dict.stop(); } catch (e) {} } }
+function startCapture(kind) { ui.cap = { kind, src: "client" }; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; ui.lastNote = null; render(); window.scrollTo({ top: 0 }); if (kind === "dict" && dict) onMic(); }
+async function finishCapture(dest) {
+  await stopDictation();
+  const c = ui.cap; let text = capText();
+  if (!text && !ui.pendingUrls.length) { toast(c.kind === "dict" ? "Dicte d'abord quelque chose." : c.kind === "photo" ? "Ajoute d'abord une photo." : "Écris ou colle d'abord le message."); return; }
+  const fromClient = c.kind === "msg" && c.src === "client" && text;
+  if (dest === "note") {
+    const n = newNote(fromClient ? "Message du client :\n" + text : text); n.photos = ui.pendingUrls.slice();
+    ui.pendingImages = []; ui.pendingUrls = []; ui.draft = ""; ui.cap = null; ui.lastNote = n.id; save(); render(); nameNote(n); return;
+  }
+  if (!text) text = "Voici des photos.";
+  ui.cap = null; ui.lastNote = null;
+  const p = ask(null, (fromClient ? "[Message de client collé]\n" : "") + text, { dossier: true });
+  render(); await p;
+}
+function bindCapture() {
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("start-dict", () => startCapture("dict")); on("start-msg", () => startCapture("msg")); on("start-photo", () => startCapture("photo"));
+  on("open-saved", () => { const id = ui.lastNote; ui.lastNote = null; ui.tab = "notes"; ui.dossierId = null; ui.noteId = id; render(); window.scrollTo({ top: 0 }); });
+  on("home-clear", () => { ui.homeChat = []; ui.choices = []; render(); });
+  if (!ui.cap) return;
+  on("cap-cancel", async () => { await stopDictation(); ui.cap = null; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; render(); });
+  on("cap-mic", onMic);
+  on("dest-note", () => finishCapture("note")); on("dest-dossier", () => finishCapture("dossier"));
+  document.querySelectorAll("[data-src]").forEach(b => b.onclick = () => { ui.draft = capText(); ui.cap.src = b.dataset.src; render(); const t = document.getElementById("ask"); if (t) t.focus(); });
+  on("cap-paste", async () => { try { const t = await navigator.clipboard.readText(); if (t) { ui.draft = (capText() ? capText() + "\n" : "") + t; render(); } } catch (e) { toast("Colle avec un appui long dans le champ."); } });
+  const addFiles = async (inp) => { ui.draft = capText(); for (const f of [...inp.files].slice(0, 6)) { if (ui.pendingUrls.length >= 6) break; ui.pendingImages.push(f); ui.pendingUrls.push(await shrink(f, 1200)); } render(); };
+  ["cap-cam", "cap-gal"].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = () => addFiles(el); });
+  document.querySelectorAll("[data-capdel]").forEach(b => b.onclick = () => { ui.draft = capText(); const i = +b.dataset.capdel; ui.pendingImages.splice(i, 1); ui.pendingUrls.splice(i, 1); render(); });
 }
 
 /* ================= Dossiers ================= */
@@ -1409,19 +1494,18 @@ function bind() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   const all = (sel, fn) => document.querySelectorAll(sel).forEach(fn);
   const d = ui.dossierId ? cur() : null;
+  if (ui.tab === "home" && ui.mode === "artisan") bindCapture();
   // Composer
-  on("mic", onMic); on("big-mic", onMic); on("send-ask", sendCurrent); on("keep-note", keepAsNote);
+  on("mic", onMic); on("send-ask", sendCurrent);
   on("speak-toggle", () => { ui.speak = !ui.speak; if (!ui.speak && tts) tts.stop(); render(); });
-  on("big-paste", () => { ui.pasteMode = true; const t = document.getElementById("ask"); t.placeholder = "Colle ici le message du client…"; t.focus(); });
   const askEl = document.getElementById("ask");
-  if (askEl) { askEl.oninput = () => { ui.draft = askEl.value; }; askEl.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendCurrent(); } }; }
+  if (askEl) { askEl.oninput = () => { ui.draft = askEl.value; }; askEl.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !ui.cap) { e.preventDefault(); sendCurrent(); } }; }
   const pin = document.getElementById("photo-in");
   if (pin) pin.onchange = async () => {
     for (const f of [...pin.files].slice(0, 4)) { ui.pendingImages.push(f); ui.pendingUrls.push(await shrink(f, 900)); }
     render(); const t = document.getElementById("ask"); if (t) { t.placeholder = "Ajoute un mot sur ces photos, ou envoie directement"; t.focus(); }
   };
   bindChoices();
-  all("[data-ex]", b => b.onclick = () => ask(null, EXAMPLES[+b.dataset.ex].text));
   all("[data-open]", b => b.onclick = () => openDossier(b.dataset.open));
   all("[data-filter]", b => b.onclick = () => { ui.filter = b.dataset.filter; render(); });
   on("back", () => go("dossiers"));

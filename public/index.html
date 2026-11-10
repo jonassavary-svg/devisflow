@@ -1279,7 +1279,7 @@ function dDevis(d) {
       <div class="grand"><span>Total</span><span id="t-tot">CHF ${chf(t.tot)}</span></div>
     </div>
     ${statusButtons(d)}
-    ${d.quote.lines.length && d.chat.some(m => m.role === "user") ? `<p class="hint">Ce devis est juste ? <button class="link" id="as-test">L'utiliser comme test de l'IA</button> : elle devra retrouver le même résultat à partir de la même discussion.</p>` : ""}`;
+    ${SHOW_TESTS && d.quote.lines.length && d.chat.some(m => m.role === "user") ? `<p class="hint">Ce devis est juste ? <button class="link" id="as-test">L'utiliser comme test de l'IA</button> : elle devra retrouver le même résultat à partir de la même discussion.</p>` : ""}`;
 }
 function statusButtons(d) {
   if (["nouveau", "visite", "chiffrage"].includes(d.status)) return `<button class="btn primary" id="mark-sent" ${d.quote.lines.length ? "" : "disabled style=\"opacity:.5\""}>J'ai envoyé le devis au client</button>`;
@@ -1437,7 +1437,7 @@ function viewSettings() {
       <p class="hint">L'IA lit la photo d'un ancien devis et propose des prestations. Tu choisis lesquelles ajouter : un prix d'un ancien chantier n'est pas forcément ton tarif standard.</p>
       ${ui.catSugg.length ? `<div class="ai"><span class="ai-tag">Prestations proposées</span>${ui.catSugg.map((s, i) => `<div class="sugg-item"><span>${esc(s.label)} · ${chf(num(s.price))}/${esc(s.unit)}</span><button class="mini" data-addsugg="${i}">Ajouter</button></div>`).join("")}</div>` : ""}
     </div>
-    ${evalPanel()}
+    ${SHOW_TESTS ? evalPanel() : `<div class="panel"><h3>Assistant IA</h3>${speedSelect()}</div>`}
     <div class="panel"><h3>Mes données</h3>
       <p class="hint">Tout est enregistré sur cet ordinateur, dans le dossier <code>data/</code> de DevisFlow, avec une sauvegarde par jour (30 jours) dans <code>data/sauvegardes/</code>.</p>
       <div class="btn-row"><button class="btn ghost" id="export-data">Exporter (fichier JSON)</button><button class="btn ghost" id="clear-dossiers">${b2.clearing ? "Confirmer : effacer tous les dossiers ?" : "Effacer tous les dossiers"}</button></div>
@@ -1619,6 +1619,9 @@ function testFromDossier(d) {
     expectLines: Object.entries(got).map(([label, qty]) => ({ label, qty })), expectTotal: Math.round(totals(d).net * 100) / 100 };
   S.tests = [...(S.tests || []), t]; save(); toast("Ajouté aux tests de l'IA (Paramètres)");
 }
+// Les tests de l'IA sont cachés : ouvrir l'app avec ?tests dans l'adresse pour les afficher.
+const SHOW_TESTS = /[?&#]tests\b/.test(location.search + location.hash);
+function speedSelect() { return `<label class="lab">Mode de l'IA<select id="ai-speed">${[["rapide", "Rapide : répond le plus vite"], ["equilibre", "Équilibré (conseillé)"], ["precis", "Précis : réfléchit plus, plus lent"]].map(([k, l]) => `<option value="${k}" ${(S.aiSpeed || "equilibre") === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>`; }
 function evalPanel() {
   const tests = allTests(), res = ui.evalResults || {}, done = Object.values(res);
   const icon = (t) => ui.evalCurrent === t.id ? `<span class="chip visit">En cours…</span>` : res[t.id] ? (res[t.id].ok ? `<span class="chip ok">Réussi</span>` : `<span class="chip sent">À revoir</span>`) : "";

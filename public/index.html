@@ -1331,41 +1331,94 @@ function dPdf(d) {
     ${downloads ? `<button class="btn primary" id="pdf">Télécharger le PDF</button>` : `<p class="hint">Le téléchargement n'est pas disponible.</p>`}`;
 }
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+// Devis PDF : en-tête entreprise, client, tableau par partie, totaux, conditions, signatures, pied de page.
+function buildPdf(d) {
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" }), c = S.company, t = totals(d), cl = S.template.style === "classique";
+  const L = 20, R = 190, W = R - L, font = cl ? "times" : "helvetica", acc = cl ? [30, 30, 30] : hexRgb(S.template.color), ink = [28, 34, 40], mute = [110, 118, 126];
+  const tint = acc.map(v => Math.round(v + (255 - v) * 0.9)), grey = [245, 246, 247];
+  const set = (size, style = "normal", col = ink) => { doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...col); };
+  const vd = qopt(d, "validityDays"), validUntil = fmtDate(Date.now() + num(vd) * DAY), ferme = qopt(d, "priceType") === "ferme";
+  let y = 18;
+  // En-tête : logo + entreprise à gauche, titre à droite
+  let lx = L;
+  if (c.logo) { try { const ip = doc.getImageProperties(c.logo), h = 16, w = Math.min(36, h * ip.width / ip.height); doc.addImage(c.logo, L, y - 4, w, w * ip.height / ip.width); lx = L + w + 5; } catch (e) {} }
+  set(14, "bold", cl ? ink : acc); doc.text(c.name || "Mon entreprise", lx, y + 1);
+  set(8.5, "normal", mute);
+  const coLines = [c.address, [c.phone, c.email].filter(Boolean).join(" · "), c.ide ? c.ide + (S.vat.liable ? " TVA" : "") : ""].filter(Boolean);
+  doc.text(coLines, lx, y + 6);
+  set(22, "bold", cl ? ink : acc); doc.text("DEVIS", R, y + 2, { align: "right" });
+  set(9, "normal", ink); doc.text([`N° ${qno(d)}`, `${coCity()}, le ${fmtDate(Date.now())}`], R, y + 8, { align: "right" });
+  y = Math.max(y + 6 + coLines.length * 4, y + 16) + 6;
+  doc.setDrawColor(...acc); doc.setLineWidth(cl ? 0.3 : 0.8); doc.line(L, y, R, y); y += 8;
+  // Client et objet
+  const cli = d.client, addr = cli.address || cli.place || "";
+  doc.setFillColor(...grey); doc.roundedRect(R - 78, y - 5, 78, 26, 2, 2, "F");
+  set(7.5, "bold", mute); doc.text("CLIENT", R - 74, y);
+  set(10.5, "bold"); doc.text(cli.name || "", R - 74, y + 5.5);
+  set(9, "normal"); doc.text(doc.splitTextToSize([addr, cli.phone, cli.email].filter(Boolean).join("\n"), 70).slice(0, 3), R - 74, y + 10.5);
+  set(7.5, "bold", mute); doc.text("CONCERNE", L, y);
+  set(11.5, "bold"); const tl = doc.splitTextToSize(d.title || "", W - 88); doc.text(tl, L, y + 5.5);
+  set(9, "normal", mute); doc.text(ferme ? "Prix forfaitaire ferme" : "Devis estimatif", L, y + 6.5 + tl.length * 5);
+  doc.text(`Valable jusqu'au ${validUntil}`, L, y + 11 + tl.length * 5);
+  y += 30;
+  // Tableau
+  const cols = { q: 128, u: 132, p: 160, m: R };
+  const header = () => {
+    doc.setFillColor(...(cl ? [235, 235, 235] : tint)); doc.rect(L, y - 5, W, 8, "F");
+    set(8, "bold", cl ? ink : acc);
+    doc.text("PRESTATION", L + 2, y); doc.text("QTÉ", cols.q, y, { align: "right" }); doc.text("UNITÉ", cols.u, y);
+    doc.text("PRIX UNIT.", cols.p, y, { align: "right" }); doc.text("MONTANT", cols.m - 2, y, { align: "right" }); y += 8;
+  };
+  const room = (r) => d.quote.lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
+  header();
+  [...new Set(d.quote.lines.map(l => l.room))].forEach(r => {
+    if (y > 250) { doc.addPage(); y = 22; header(); }
+    set(9.5, "bold"); doc.text(r, L + 2, y); set(8.5, "normal", mute); doc.text(chf(room(r)), cols.m - 2, y, { align: "right" }); y += 2;
+    doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(L, y, R, y); y += 5;
+    d.quote.lines.filter(l => l.room === r).forEach(l => {
+      const w = doc.splitTextToSize(l.label, 96);
+      if (y + w.length * 4.5 > 262) { doc.addPage(); y = 22; header(); }
+      set(9.5, "normal"); doc.text(w, L + 4, y);
+      doc.text(l.qty === "" ? "?" : String(l.qty).replace(".", ","), cols.q, y, { align: "right" }); doc.text(l.unit, cols.u, y);
+      doc.text(chf(num(l.price)), cols.p, y, { align: "right" }); doc.text(chf(num(l.qty) * num(l.price)), cols.m - 2, y, { align: "right" });
+      y += w.length * 4.5 + 2.5;
+    });
+    y += 3;
+  });
+  // Totaux
+  if (y > 222) { doc.addPage(); y = 22; }
+  y += 2; const tx = 122;
+  const row = (a, b, bold) => { set(9.5, bold ? "bold" : "normal"); doc.text(a, tx, y); doc.text(b, R - 2, y, { align: "right" }); y += 5.5; };
+  row("Sous-total", chf(t.sub));
+  if (t.disc) { row(`Remise ${num(d.quote.discount)} %`, "-" + chf(t.disc)); row("Total hors TVA", chf(t.net)); }
+  if (S.vat.liable) row(`TVA ${String(S.vat.rate).replace(".", ",")} %`, chf(t.tva)); else row("Non assujetti à la TVA", "–");
+  if (Math.abs(t.rnd) >= 0.005) row("Arrondi", chf(t.rnd));
+  y += 1; doc.setFillColor(...(cl ? [30, 30, 30] : acc)); doc.roundedRect(tx - 3, y - 5, R - tx + 3, 9, 1.5, 1.5, "F");
+  set(11, "bold", [255, 255, 255]); doc.text("TOTAL CHF", tx, y + 1); doc.text(chf(t.tot), R - 2, y + 1, { align: "right" }); y += 16;
+  // Conditions
+  if (y > 235) { doc.addPage(); y = 22; }
+  set(7.5, "bold", mute); doc.text("CONDITIONS", L, y); y += 5;
+  set(9, "normal");
+  const cond = [ferme ? "Prix forfaitaire ferme." : "Devis estimatif : le montant final dépend des quantités réellement exécutées.", `Offre valable ${vd} jours, jusqu'au ${validUntil}.`, S.defaults.payment, qopt(d, "notes")].filter(x => String(x || "").trim());
+  cond.forEach(x => { const w = doc.splitTextToSize("• " + x, W); doc.text(w, L, y); y += w.length * 4.5 + 1; });
+  // Signatures
+  y += 12; if (y > 262) { doc.addPage(); y = 40; }
+  set(8.5, "normal", mute); doc.text(`Pour ${c.name || "l'entreprise"}`, L, y); doc.text("Bon pour accord, date et signature du client", 112, y);
+  doc.setDrawColor(150); doc.setLineWidth(0.2); doc.line(L, y + 14, L + 68, y + 14); doc.line(112, y + 14, R, y + 14);
+  // Pied de page sur chaque page
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(L, 282, R, 282);
+    set(7.5, "normal", mute);
+    doc.text([c.name, c.address, c.phone, c.email].filter(Boolean).join(" · "), L, 286, { maxWidth: W - 22 });
+    if (c.iban || c.ide) doc.text([c.iban ? `IBAN ${c.iban}` : "", c.ide ? `IDE ${c.ide}` : ""].filter(Boolean).join(" · "), L, 290);
+    doc.text(`Page ${i} / ${pages}`, R, 286, { align: "right" });
+  }
+  return doc;
+}
 async function makePdf(d) {
   if (!window.jspdf) { toast("Le générateur PDF n'a pas pu se charger."); return; }
-  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" }), c = S.company, t = totals(d), Lx = 18, R = 192, cl = S.template.style === "classique";
-  const font = cl ? "times" : "helvetica", rgb = hexRgb(S.template.color); let y;
-  const logo = (x, yy, w) => { if (!c.logo) return; try { const p = doc.getImageProperties(c.logo); const h = Math.min(14, w * p.height / p.width); doc.addImage(c.logo, x, yy, h * p.width / p.height, h); } catch (e) {} };
-  if (cl) { logo(98, 10, 20); doc.setFont(font, "bold"); doc.setFontSize(15); doc.text(c.name, 105, c.logo ? 30 : 20, { align: "center" });
-    doc.setFont(font, "normal"); doc.setFontSize(9); doc.setTextColor(90); doc.text(`${c.address} · ${c.phone} · ${c.email}`, 105, c.logo ? 35 : 25, { align: "center" });
-    doc.text(`${c.ide}${S.vat.liable ? " TVA" : ""}`, 105, c.logo ? 39 : 29, { align: "center" }); doc.setDrawColor(20); doc.line(Lx, c.logo ? 42 : 32, R, c.logo ? 42 : 32); y = c.logo ? 52 : 42; }
-  else { doc.setFillColor(...rgb); doc.rect(0, 0, 210, 26, "F"); doc.setTextColor(255); doc.setFont(font, "bold"); doc.setFontSize(15); doc.text(c.name, Lx, 13);
-    doc.setFont(font, "normal"); doc.setFontSize(9); doc.text(`${c.address} · ${c.phone} · ${c.email} · ${c.ide}${S.vat.liable ? " TVA" : ""}`, Lx, 19);
-    if (c.logo) { doc.setFillColor(255, 255, 255); doc.roundedRect(162, 5, 32, 16, 2, 2, "F"); logo(164, 6, 28); } y = 38; }
-  doc.setTextColor(20); doc.setFontSize(10);
-  doc.text([`${coCity()}, le ${fmtDate(Date.now())}`, "", d.client.name, d.client.address || d.client.place || ""], R, y, { align: "right" });
-  doc.setFont(font, "bold"); doc.setFontSize(14); if (!cl) doc.setTextColor(...rgb); doc.text(`Devis N° ${qno(d)}`, Lx, y); doc.setTextColor(20);
-  doc.setFont(font, "normal"); doc.setFontSize(10); doc.text(d.title, Lx, y + 6);
-  doc.setFontSize(8.5); doc.setTextColor(90); doc.text(qopt(d, "priceType") === "ferme" ? "PRIX FORFAITAIRE FERME" : "DEVIS ESTIMATIF", Lx, y + 11);
-  y += 24; doc.text("PRESTATION", Lx, y); doc.text("QTÉ", 125, y, { align: "right" }); doc.text("PRIX UNIT.", 155, y, { align: "right" }); doc.text("MONTANT CHF", R, y, { align: "right" });
-  doc.setDrawColor(20); doc.line(Lx, y + 2, R, y + 2); y += 8; doc.setTextColor(20); doc.setFontSize(10);
-  [...new Set(d.quote.lines.map(l => l.room))].forEach(room => {
-    if (y > 258) { doc.addPage(); y = 20; }
-    doc.setFont(font, "bold"); doc.text(room, Lx, y); y += 6; doc.setFont(font, "normal");
-    d.quote.lines.filter(l => l.room === room).forEach(l => {
-      const w = doc.splitTextToSize(l.label, 92); if (y + w.length * 5 > 270) { doc.addPage(); y = 20; }
-      doc.text(w, Lx + 3, y); doc.text(`${l.qty === "" ? "?" : l.qty} ${l.unit}`, 125, y, { align: "right" }); doc.text(chf(num(l.price)), 155, y, { align: "right" }); doc.text(chf(num(l.qty) * num(l.price)), R, y, { align: "right" });
-      y += w.length * 5 + 2; doc.setDrawColor(225); doc.line(Lx, y - 2, R, y - 2);
-    }); y += 2;
-  });
-  if (y > 225) { doc.addPage(); y = 20; }
-  y += 4; const row = (a, b, bold) => { doc.setFont(font, bold ? "bold" : "normal"); doc.text(a, 128, y); doc.text(b, R, y, { align: "right" }); y += 6; };
-  row("Sous-total", chf(t.sub)); if (t.disc) row(`Remise ${num(d.quote.discount)} %`, "-" + chf(t.disc));
-  if (S.vat.liable) row(`TVA ${String(S.vat.rate).replace(".", ",")} %`, chf(t.tva)); else row("Non assujetti à la TVA", "–");
-  row("Arrondi", chf(t.rnd)); doc.setDrawColor(20); doc.line(128, y - 4, R, y - 4); row("Total CHF", chf(t.tot), true);
-  y += 6; doc.setFont(font, "normal"); doc.setFontSize(9); doc.setTextColor(90);
-  const foot = doc.splitTextToSize(`${qopt(d, "notes")}\nDevis valable ${qopt(d, "validityDays")} jours. ${S.defaults.payment}`, R - Lx); doc.text(foot, Lx, y);
-  doc.text("Bon pour accord, date et signature : ______________________________", Lx, y + foot.length * 4.5 + 10);
+  const doc = buildPdf(d);
   try { await downloads.save({ filename: `devis-${qno(d)}.pdf`, data: doc.output("blob") }); toast("PDF enregistré"); }
   catch (e) { if (e && e.code !== "declined") toast("Le PDF n'a pas pu être enregistré ici."); }
 }
@@ -1404,7 +1457,7 @@ function viewSettings() {
         <label class="lab">Devis rangé par<input class="field" id="s-part" value="${esc(S.partLabel || "Pièce")}" placeholder="Pièce, zone, étage…"></label></div>
       <label class="lab">Adresse<input class="field" id="s-address" data-co="address" value="${esc(c.address)}"></label>
       <div class="grid2"><label class="lab">Téléphone<input class="field" id="s-phone" data-co="phone" value="${esc(c.phone)}"></label><label class="lab">Email<input class="field" id="s-email" data-co="email" value="${esc(c.email)}"></label></div>
-      <label class="lab">N° IDE<input class="field" id="s-ide" data-co="ide" value="${esc(c.ide)}"></label>
+      <div class="grid2"><label class="lab">N° IDE<input class="field" id="s-ide" data-co="ide" value="${esc(c.ide)}"></label><label class="lab">IBAN (facultatif)<input class="field" id="s-iban" data-co="iban" value="${esc(c.iban || "")}" placeholder="CH.."></label></div>
       <div class="grid2"><label class="lab">TVA<select id="s-vat"><option value="1" ${S.vat.liable ? "selected" : ""}>Assujetti</option><option value="0" ${!S.vat.liable ? "selected" : ""}>Non assujetti</option></select></label>
         <label class="lab">Taux (%)<input class="field" id="s-rate" inputmode="decimal" value="${S.vat.rate}" ${S.vat.liable ? "" : "disabled"}></label></div>
     </div>

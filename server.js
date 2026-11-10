@@ -15,7 +15,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 // Fournisseur d'IA : Anthropic (Claude) ou OpenAI, selon la clé présente dans .env.
 const PROVIDER = (process.env.DEVISFLOW_PROVIDER || (process.env.ANTHROPIC_API_KEY ? "anthropic" : process.env.OPENAI_API_KEY ? "openai" : "")).toLowerCase();
-const MODEL = process.env.DEVISFLOW_MODEL || (PROVIDER === "openai" ? "gpt-5" : "claude-opus-5-5");
+const MODEL = process.env.DEVISFLOW_MODEL || (PROVIDER === "openai" ? "gpt-5-mini" : "claude-opus-5-5");
 const EFFORT = process.env.DEVISFLOW_EFFORT || (PROVIDER === "openai" ? "low" : "medium");
 const PUBLIC = path.join(here, "public");
 const DATA_DIR = process.env.DEVISFLOW_DATA || path.join(here, "data");

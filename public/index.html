@@ -207,7 +207,15 @@ textarea { min-height: 84px; resize: vertical; line-height: 1.45; }
 .thumbs img, .thumbs .photo { width: 64px; height: 48px; object-fit: cover; border-radius: 6px; }
 .file-in { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .line { border-bottom: 1px solid var(--line); padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
-.line-row { display: grid; grid-template-columns: 1fr auto 1fr auto auto; gap: 6px; align-items: center; font-size: 13px; }
+.line-row { display: grid; grid-template-columns: 64px auto 74px 1fr; gap: 6px; align-items: center; font-size: 13px; }
+.line-row > span:nth-child(2) { white-space: nowrap; color: var(--muted); }
+.line-top { display: flex; gap: 6px; align-items: flex-start; }
+.line-top .lbl { min-height: 0; resize: none; overflow: hidden; line-height: 1.35; font-family: var(--body); }
+.sum [hidden] { display: none; }
+.dsub .none { font: 400 13px var(--body); color: var(--muted); }
+.line-row .line-total { text-align: right; font: 600 13.5px var(--mono); }
+.line .acts { display: flex; gap: 0; flex: none; }
+.line .acts button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 4px 5px; }
 .line-row input { width: 100%; min-width: 0; font: 500 13.5px var(--mono); text-align: right; padding: 6px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink); }
 .line .lbl { font: 500 14px var(--body); background: transparent; border: 0; border-bottom: 1px dashed var(--line); border-radius: 0; padding: 2px 0; color: var(--ink); width: 100%; }
 .line-total { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; min-width: 72px; }
@@ -225,7 +233,7 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: sp .8s linear infinite; vertical-align: -2px; }
 @keyframes sp { to { transform: rotate(360deg); } }
-@media (max-width: 380px) { .line-row { grid-template-columns: 1fr auto 1fr auto; } .line-row .line-total { grid-column: 1 / -1; } }
+@media (max-width: 360px) { .line-row { grid-template-columns: 56px auto 64px 1fr; } }
 /* v5 */
 .seg { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px var(--body); padding: 8px 2px; border-radius: 9px; cursor: pointer; position: relative; }
@@ -305,16 +313,46 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 .cap h3 { font-size: 18px; }
 .mic.big { width: 136px; height: 136px; }
 .mic.big svg { width: 54px; height: 54px; }
-.seg, .dest { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.seg button, .dest button { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 14px; padding: 12px; text-align: left; font: 400 12.5px/1.35 var(--body); cursor: pointer; min-width: 0; }
-.seg button b, .dest button b { display: flex; align-items: center; gap: 6px; color: var(--ink); font: 700 15px var(--display); margin-bottom: 3px; }
+.pick, .dest { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pick button, .dest button { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 14px; padding: 12px; text-align: left; font: 400 12.5px/1.35 var(--body); cursor: pointer; min-width: 0; }
+.pick button b, .dest button b { display: flex; align-items: center; gap: 6px; color: var(--ink); font: 700 15px var(--display); margin-bottom: 3px; }
 .dest button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
-.seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.pick button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
 .dest button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .dest button.primary b { color: var(--accent-ink); }
 .cap textarea { min-height: 130px; font-size: 16px; }
 label.btn { display: flex; align-items: center; justify-content: center; gap: 6px; text-align: center; }
 .okbox { background: var(--ok-soft); border-radius: 12px; padding: 10px 14px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dcard { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.dcard h2 { font-size: 21px; line-height: 1.2; }
+.dtop { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.dsub { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: 13.5px; color: var(--muted); }
+.dsub b { color: var(--ink); font: 700 15px var(--mono); white-space: nowrap; }
+.contacts { display: flex; flex-wrap: wrap; gap: 6px; }
+.contacts a, .contacts span { font-size: 12.5px; padding: 5px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink); text-decoration: none; display: inline-flex; gap: 5px; align-items: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contacts svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; flex: none; }
+.contacts .miss { color: var(--muted); border: 1px dashed var(--line); background: transparent; cursor: pointer; font: inherit; font-size: 12.5px; }
+.next-step { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 12px; padding: 10px 12px; background: var(--accent-soft); }
+.next-step.warn { background: var(--warn-soft); }
+.next-step small { display: block; color: var(--muted); font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+.next-step b { font-size: 14.5px; }
+.next-step .mini { white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 7px 12px; }
+.missing { border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+.quick { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.quick .mini { white-space: nowrap; flex: none; }
+.room { border: 1px solid var(--line); border-radius: 14px; padding: 6px 12px 4px; margin-bottom: 10px; }
+.room .room-h { display: flex; justify-content: space-between; margin: 4px 0 2px; }
+.room .line:last-child { border-bottom: 0; }
+.addrow { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+details.opts summary { cursor: pointer; font-weight: 600; font-size: 14px; list-style: none; display: flex; justify-content: space-between; gap: 8px; }
+details.opts summary::-webkit-details-marker { display: none; }
+details.opts summary span { font-weight: 400; color: var(--muted); font-size: 12.5px; text-align: right; }
+details.opts[open] summary { margin-bottom: 4px; }
+.facts { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.facts li { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.facts li:last-child { border-bottom: 0; }
+.facts .del { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+.meta-list { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
 .big-new { display: flex; flex-direction: column; gap: 10px; background: var(--accent-soft); border-radius: 16px; padding: 14px; }
 .big-new h3 { font-size: 16px; }
 .big-new .composer { background: transparent; border-top: 0; position: static; padding-top: 0; }
@@ -938,7 +976,7 @@ function viewCapture() {
     ph = "Ce que tu dictes s'écrit ici. Tu peux corriger avant de ranger.";
   }
   if (c.kind === "msg") {
-    top = `<div class="seg"><button data-src="client" aria-pressed="${c.src === "client"}"><b>Message d'un client</b>WhatsApp, SMS ou email copié</button><button data-src="moi" aria-pressed="${c.src === "moi"}"><b>Mon texte</b>Ce que j'écris moi-même</button></div>
+    top = `<div class="pick"><button data-src="client" aria-pressed="${c.src === "client"}"><b>Message d'un client</b>WhatsApp, SMS ou email copié</button><button data-src="moi" aria-pressed="${c.src === "moi"}"><b>Mon texte</b>Ce que j'écris moi-même</button></div>
       ${c.src === "client" && navigator.clipboard && navigator.clipboard.readText ? `<button class="pill-btn" id="cap-paste">${ICONS.paste}<span>Coller le message copié</span></button>` : ""}`;
     ph = c.src === "client" ? "Colle ici le message du client…" : "Ex. : M. Martin à Marly, 3 chambres à repeindre, rappeler jeudi…";
   }
@@ -1011,59 +1049,111 @@ function viewDossiers() {
       <div class="card-foot"><span class="next ${n.warn ? "warn" : ""}">${esc(n.t)}</span><span class="amount">${d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "—"}</span></div>
     </button>`; }).join("") : `<p class="empty">Aucun dossier ici.</p>`}</div>`;
 }
+const ICON_TEL = '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
+const ICON_MAIL = '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>';
+// Ce que l'artisan doit faire maintenant dans ce dossier, avec le bouton qui y mène.
+function nextStep(d) {
+  const w = d.quote.lines.length ? checkQuote(d) : [];
+  const hasEnvoi = d.messages.some(m => /envoi/i.test(m.kind) && m.status !== "envoyé");
+  if (d.status === "nouveau") return d.quote.lines.length ? { t: "Compléter le devis", btn: ["Voir le devis", 'data-dtab="devis"'] } : { t: "Organiser la visite", btn: ["Proposer une visite", 'data-quickx="visit"'] };
+  if (d.status === "visite") return { t: `Visite ${d.visit || "à planifier"}`, btn: dict ? ["Dicter la visite", 'id="ns-dict"'] : ["Discussion", 'data-dtab="chat"'] };
+  if (d.status === "chiffrage") {
+    if (!d.quote.lines.length) return { t: "Remplir le devis", btn: ["Discussion", 'data-dtab="chat"'] };
+    if (w.length) return { t: `${w.length} point${w.length > 1 ? "s" : ""} à vérifier dans le devis`, warn: true, btn: ["Voir", 'data-dtab="devis"'] };
+    return { t: "Devis prêt à envoyer", btn: hasEnvoi ? ["Envoyer", 'data-dtab="messages"'] : ["Préparer l'envoi", 'data-quick="0"'] };
+  }
+  if (d.status === "envoye") { const due = (d.sentAt || Date.now()) + S.defaults.relanceDays * DAY;
+    return Date.now() >= due ? { t: "À relancer", warn: true, btn: ["Préparer la relance", 'data-quick="1"'] } : { t: `En attente de réponse · relance le ${fmtDate(due)}`, btn: ["Réponse reçue", 'data-dtab="devis"'] }; }
+  if (d.status === "accepte") return { t: "Accepté : planifier le chantier" };
+  return { t: "Dossier clos (refusé)" };
+}
 function viewDossier(d) {
-  const drafts = d.messages.filter(m => m.status === "brouillon").length;
-  const tabs = [["chat", "Discussion"], ["devis", "Devis"], ["pdf", "PDF"], ["messages", "Messages"]];
+  const drafts = d.messages.filter(m => m.status === "brouillon").length, c = d.client, ns = nextStep(d);
+  const tabs = [["chat", "Discussion"], ["devis", "Devis"], ["messages", "Messages"], ["fiche", "Fiche"]];
+  const cur = ui.dtab === "pdf" ? "devis" : ui.dtab;
+  const where = c.address || c.place;
   return `<button class="back" id="back">‹ Dossiers</button>
-    <div class="dhead">
-      <div class="dhead-top"><div><h2>${esc(d.client.name)}</h2><div class="dmeta">${esc(d.title)}</div></div><span id="dh-status">${chip(d.status)}</span></div>
-      <div class="dmeta">Devis ${qno(d)} · <b id="dh-total">${d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "pas encore de devis"}</b> · reçu ${ago(d.created)} (${esc(d.source)})</div>
+    <div class="dcard">
+      <div class="dtop"><h2>${esc(c.name)}</h2><span id="dh-status">${chip(d.status)}</span></div>
+      <div class="dsub"><span>${esc(d.title)}</span>${d.quote.lines.length ? `<b id="dh-total">CHF ${chf(totals(d).tot)}</b>` : `<span class="none">Pas encore de devis</span>`}</div>
+      <div class="contacts">
+        ${c.phone ? `<a href="tel:${esc(c.phone.replace(/\s/g, ""))}">${ICON_TEL}${esc(c.phone)}</a>` : `<button class="miss" data-dtab="fiche">+ Téléphone</button>`}
+        ${c.email ? `<a href="mailto:${esc(c.email)}">${ICON_MAIL}${esc(c.email)}</a>` : `<button class="miss" data-dtab="fiche">+ Email</button>`}
+        ${where ? `<a target="_blank" href="https://maps.google.com/?q=${encodeURIComponent(where)}">${ICON_PIN}${esc(where)}</a>` : `<button class="miss" data-dtab="fiche">+ Adresse</button>`}
+      </div>
+      <div class="next-step ${ns.warn ? "warn" : ""}"><div><small>Prochaine étape</small><b>${esc(ns.t)}</b></div>${ns.btn ? `<button class="mini" ${ns.btn[1]}>${esc(ns.btn[0])}</button>` : ""}</div>
     </div>
-    <div class="seg">${tabs.map(([k, l]) => `<button data-dtab="${k}" aria-current="${ui.dtab === k}">${l}${k === "messages" && drafts ? `<span class="badge">${drafts}</span>` : ""}</button>`).join("")}</div>
-    ${{ chat: dChat, devis: dDevis, pdf: dPdf, messages: dMessages }[ui.dtab](d)}`;
+    <div class="seg">${tabs.map(([k, l]) => `<button data-dtab="${k}" aria-current="${cur === k}">${l}${k === "messages" && drafts ? `<span class="badge">${drafts}</span>` : ""}</button>`).join("")}</div>
+    ${{ chat: dChat, devis: dDevis, pdf: dPdf, messages: dMessages, fiche: dFiche }[ui.dtab] ? { chat: dChat, devis: dDevis, pdf: dPdf, messages: dMessages, fiche: dFiche }[ui.dtab](d) : dChat(d)}`;
+}
+function quickFor(d) {
+  const q = [];
+  if (d.quote.lines.length && ["nouveau", "visite", "chiffrage"].includes(d.status)) q.push(0);
+  if (d.status === "envoye") q.push(1);
+  if (["nouveau", "visite", "chiffrage"].includes(d.status)) q.push(2);
+  if (d.quote.lines.length && d.status !== "accepte") q.push(3);
+  return q.map(i => `<button class="mini" data-quick="${i}">${["Prépare le mail d'envoi", "Prépare une relance", "Qu'est-ce qui manque ?", "Remise de 5 %"][i]}</button>`).join("");
 }
 function dChat(d) {
-  return `<details class="panel"><summary style="cursor:pointer;font-weight:600">Fiche du dossier</summary>
-      <div class="dmeta">${esc(d.client.address || d.client.place || "Adresse ?")} · ${esc(d.client.phone || "tél. ?")} · ${esc(d.client.email || "email ?")}</div>
-      ${d.facts.length ? `<div class="ai"><span class="ai-tag">Ce que l'IA a retenu</span><ul>${d.facts.map(s => `<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}
-      ${d.missing.length ? `<div class="warnbox"><b>Manque encore :</b> ${d.missing.map(esc).join(" · ")}</div>` : ""}
-      ${d.photos.length ? `<div class="thumbs">${d.photos.map(u => `<img src="${u}" alt="Photo du chantier">`).join("")}</div>` : ""}
-    </details>
+  return `${d.missing.length ? `<div class="missing"><b>Manque encore :</b> ${d.missing.map(esc).join(" · ")}</div>` : ""}
     <div class="chat" id="chat">${chatHtml(d.chat)}</div>
-    <div class="toolbar">${["Rédige l'email d'envoi du devis", "Prépare une relance", "Qu'est-ce qui manque ?", "Mets une remise de 5 %"].map((s, i) => `<button class="mini" data-quick="${i}">${s}</button>`).join("")}</div>
-    ${composer("Parle ou écris à l'assistant pour ce dossier…")}`;
+    <div class="quick">${quickFor(d)}</div>
+    ${composer("Parle ou écris à l'IA pour ce dossier…")}`;
 }
 const QUICK = ["Rédige l'email d'envoi du devis.", "Prépare une relance polie pour ce devis.", "Qu'est-ce qui manque encore pour finir ce devis ?", "Mets une remise de 5 % sur ce devis."];
+function dFiche(d) {
+  const c = d.client, f = (id, label, v, ph, type) => `<label class="lab">${label}<input class="field" id="${id}" value="${esc(v || "")}" placeholder="${ph}" ${type ? `type="${type}" inputmode="${type}"` : ""}></label>`;
+  return `<div class="panel">
+      <div class="section-t" style="margin:0">Client</div>
+      ${f("f-name", "Nom", c.name, "Mme / M. …")}
+      <div class="grid2">${f("f-phone", "Téléphone", c.phone, "079 …", "tel")}${f("f-email", "Email", c.email, "nom@…", "email")}</div>
+      ${f("f-address", "Adresse du chantier", c.address, "Rue, NPA localité")}
+      ${f("f-place", "Localité", c.place, "Fribourg")}
+    </div>
+    <div class="panel">
+      <div class="section-t" style="margin:0">Travaux</div>
+      ${f("f-title", "Titre du dossier", d.title, "Ex. Repeindre le salon")}
+      <div class="grid2">${f("f-visit", "Visite", d.visit, "Ex. jeudi 9h")}
+        <label class="lab">Statut<select id="f-status">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${d.status === k ? "selected" : ""}>${v.label}</option>`).join("")}</select></label></div>
+    </div>
+    <div class="panel">
+      <div class="section-t" style="margin:0">Ce que l'IA a retenu</div>
+      ${d.facts.length ? `<ul class="facts">${d.facts.map((x, i) => `<li><span>${esc(x)}</span><button class="del" data-delfact="${i}" aria-label="Retirer">×</button></li>`).join("")}</ul>` : `<p class="hint">Rien pour l'instant.</p>`}
+      ${d.missing.length ? `<div class="section-t" style="margin:6px 0 0">Manque encore</div><ul class="facts">${d.missing.map((x, i) => `<li><span>${esc(x)}</span><button class="del" data-delmiss="${i}" aria-label="C'est réglé">×</button></li>`).join("")}</ul>` : ""}
+    </div>
+    ${d.photos.length ? `<div class="panel"><div class="section-t" style="margin:0">Photos (${d.photos.length})</div><div class="thumbs">${d.photos.map(u => `<a href="${u}" target="_blank"><img src="${u}" alt="Photo du chantier"></a>`).join("")}</div></div>` : ""}
+    <div class="meta-list"><span>Devis N° ${qno(d)} · reçu ${ago(d.created)} (${esc(d.source)})</span>${d.sentAt ? `<span>Devis envoyé le ${fmtDate(d.sentAt)}</span>` : ""}</div>`;
+}
 function dDevis(d) {
   const t = totals(d), rooms = [...new Set(d.quote.lines.map(l => l.room))], canUndo = (ui.undo[d.id] || []).length;
-  const opts = `<option value="">+ Ajouter depuis le catalogue…</option>${S.catalogue.map(c => `<option value="${c.id}">${esc(c.label)} (${chf(c.price)}/${c.unit})</option>`).join("")}<option value="__free">Ligne libre</option>`;
-  return `<div class="toolbar"><button class="mini" id="undo" ${canUndo ? "" : "disabled"}>↶ Annuler</button><button class="mini" data-dtab="pdf">Voir le PDF</button><button class="mini" data-dtab="chat">Modifier en parlant à l'IA</button></div>
-    ${(() => { const w = d.quote.lines.length ? checkQuote(d) : []; return w.length ? `<div class="warnbox"><b>À vérifier avant d'envoyer :</b><ul class="checks">${w.map(x => `<li class="ko">${esc(x)}</li>`).join("")}</ul></div>` : d.quote.lines.length ? `<p class="hint" style="color:var(--ok)">✓ Contrôle automatique : rien à signaler.</p>` : ""; })()}
-    ${d.quote.lines.length ? "" : `<p class="empty">Pas encore de lignes. Parle à l'assistant dans l'onglet Discussion, ou ajoute une ligne ci-dessous.</p>`}
-    <div>${rooms.map(room => `<div class="room-h">${esc(room)}</div>` + d.quote.lines.map((l, idx) => l.room !== room ? "" : `
+  const opts = `<option value="">+ Ajouter une prestation…</option>${S.catalogue.map(c => `<option value="${c.id}">${esc(c.label)} (${chf(c.price)}/${c.unit})</option>`).join("")}<option value="__free">Ligne libre</option>`;
+  const w = d.quote.lines.length ? checkQuote(d) : [];
+  const roomSum = (r) => d.quote.lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
+  return `<div class="toolbar"><button class="mini" id="undo" ${canUndo ? "" : "disabled"}>↶ Annuler</button><button class="mini" data-dtab="pdf">Aperçu PDF</button>${downloads && d.quote.lines.length ? `<button class="mini" id="pdf">Télécharger le PDF</button>` : ""}</div>
+    ${w.length ? `<div class="warnbox"><b>À vérifier avant d'envoyer :</b><ul class="checks">${w.map(x => `<li class="ko">${esc(x)}</li>`).join("")}</ul></div>` : d.quote.lines.length ? `<p class="hint" style="color:var(--ok)">✓ Contrôle automatique : rien à signaler.</p>` : ""}
+    ${d.quote.lines.length ? "" : `<p class="empty">Pas encore de lignes. Dicte ou écris dans l'onglet Discussion, ou ajoute une prestation ci-dessous.</p>`}
+    <div>${rooms.map(room => `<div class="room"><div class="room-h"><span>${esc(room)}</span><span>${chf(roomSum(room))}</span></div>` + d.quote.lines.map((l, idx) => l.room !== room ? "" : `
       <div class="line" data-line="${l.id}">
-        <div style="display:flex;gap:6px;align-items:center"><input class="lbl" id="lbl-${l.id}" data-f="label" value="${esc(l.label)}" aria-label="Prestation"><span class="mv"><button data-up="${idx}" aria-label="Monter">▲</button><button data-down="${idx}" aria-label="Descendre">▼</button></span></div>
+        <div class="line-top"><textarea class="lbl" id="lbl-${l.id}" data-f="label" rows="${Math.max(1, Math.ceil(l.label.length / 27))}" aria-label="Prestation">${esc(l.label)}</textarea>
+          <span class="acts"><button data-up="${idx}" aria-label="Monter">▲</button><button data-down="${idx}" aria-label="Descendre">▼</button><button data-del="${l.id}" aria-label="Supprimer la ligne">×</button></span></div>
         <div class="line-row">
           <input id="qty-${l.id}" data-f="qty" inputmode="decimal" value="${l.qty}" aria-label="Quantité" placeholder="?">
           <span>${esc(l.unit)} ×</span>
           <input id="price-${l.id}" data-f="price" inputmode="decimal" value="${l.price}" aria-label="Prix unitaire">
           <span class="line-total" id="tot-${l.id}">${chf(num(l.qty) * num(l.price))}</span>
-          <button class="del" data-del="${l.id}" aria-label="Supprimer la ligne">×</button>
         </div>
         ${l.missingQty && l.qty === "" ? '<span class="flag">Quantité à compléter</span>' : ""}${l.missingPrice && !num(l.price) ? '<span class="flag">Prix à compléter (pas dans ton catalogue)</span>' : ""}
-      </div>`).join("")).join("")}</div>
-    <select id="add-line" aria-label="Ajouter une ligne">${opts}</select>
-    <div class="panel">
+      </div>`).join("") + `</div>`).join("")}</div>
+    <div class="addrow"><select id="add-line" aria-label="Ajouter une prestation">${opts}</select><input class="field" id="q-room" value="${esc(d.quote.lines.length ? d.quote.lines[d.quote.lines.length - 1].room : "Général")}" aria-label="Pièce" placeholder="Pièce"></div>
+    <details class="panel opts"><summary>Options du devis <span>${qopt(d, "priceType") === "ferme" ? "Forfait ferme" : "Estimatif"} · ${qopt(d, "validityDays")} j${num(d.quote.discount) ? ` · remise ${num(d.quote.discount)} %` : ""}</span></summary>
       <div class="grid2">
         <label class="lab">Remise (%)<input class="field" id="q-disc" inputmode="decimal" value="${d.quote.discount || 0}"></label>
         <label class="lab">Type de prix<select id="q-ptype"><option value="estimatif" ${qopt(d, "priceType") === "estimatif" ? "selected" : ""}>Estimatif</option><option value="ferme" ${qopt(d, "priceType") === "ferme" ? "selected" : ""}>Forfait ferme</option></select></label>
       </div>
-      <div class="grid2">
-        <label class="lab">Validité (jours)<input class="field" id="q-valid" inputmode="numeric" value="${qopt(d, "validityDays")}"></label>
-        <label class="lab">Pièce des nouvelles lignes<input class="field" id="q-room" value="${esc(d.quote.lines.length ? d.quote.lines[d.quote.lines.length - 1].room : "Général")}"></label>
-      </div>
+      <label class="lab">Validité (jours)<input class="field" id="q-valid" inputmode="numeric" value="${qopt(d, "validityDays")}"></label>
       <label class="lab">Remarque sur le devis<textarea id="q-notes">${esc(qopt(d, "notes"))}</textarea></label>
-    </div>
+    </details>
     <div class="sum">
       <div><span>Sous-total</span><span id="t-sub">${chf(t.sub)}</span></div>
       <div id="r-disc" ${t.disc ? "" : "hidden"}><span>Remise <span id="t-dp">${num(d.quote.discount)}</span> %</span><span id="t-disc">-${chf(t.disc)}</span></div>
@@ -1072,7 +1162,7 @@ function dDevis(d) {
       <div class="grand"><span>Total</span><span id="t-tot">CHF ${chf(t.tot)}</span></div>
     </div>
     ${statusButtons(d)}
-    ${d.quote.lines.length && d.chat.some(m => m.role === "user") ? `<button class="btn ghost" id="as-test">Utiliser comme test de l'IA</button><p class="hint">Quand ce devis est juste, garde-le comme exemple : l'IA devra retrouver le même résultat à partir de la même discussion.</p>` : ""}`;
+    ${d.quote.lines.length && d.chat.some(m => m.role === "user") ? `<p class="hint">Ce devis est juste ? <button class="link" id="as-test">L'utiliser comme test de l'IA</button> : elle devra retrouver le même résultat à partir de la même discussion.</p>` : ""}`;
 }
 function statusButtons(d) {
   if (["nouveau", "visite", "chiffrage"].includes(d.status)) return `<button class="btn primary" id="mark-sent" ${d.quote.lines.length ? "" : "disabled style=\"opacity:.5\""}>J'ai envoyé le devis au client</button>`;
@@ -1109,7 +1199,7 @@ function docHtml(d) {
 }
 function dPdf(d) {
   if (!d.quote.lines.length) return `<p class="empty">Le PDF apparaîtra ici dès que le devis aura des lignes.</p>`;
-  return `<div class="toolbar"><span class="hint" style="flex:1">Modèle « ${S.template.style} » · à changer dans Paramètres</span></div>
+  return `<div class="toolbar"><button class="mini" data-dtab="devis">‹ Retour au devis</button><span class="hint" style="flex:1;text-align:right">Modèle « ${S.template.style} » · Paramètres</span></div>
     <div class="paper-wrap">${docHtml(d)}</div>
     ${downloads ? `<button class="btn primary" id="pdf">Télécharger le PDF</button>` : `<p class="hint">Le téléchargement n'est pas disponible.</p>`}`;
 }
@@ -1155,7 +1245,7 @@ async function makePdf(d) {
 
 /* ================= Messages ================= */
 function dMessages(d) {
-  return `<p class="sub">Les messages préparés par l'IA. Relis, puis ouvre-les dans Mail, WhatsApp ou SMS (texte déjà rempli). Pour un email, télécharge le PDF et joins-le. Rien ne part sans toi.</p>
+  return `<p class="sub">Relis, puis envoie avec Mail, WhatsApp ou SMS (texte déjà rempli). Rien ne part sans toi.</p>
     <div class="toolbar"><button class="mini" data-quick="0">+ Email d'envoi du devis</button><button class="mini" data-quick="1">+ Relance</button><button class="mini" data-quickx="visit">+ Confirmation de visite</button></div>
     ${d.messages.length ? d.messages.map(m => `<div class="msgcard">
       <div class="card-top"><span class="section-t">${esc(m.kind)}</span><span class="chip ${m.status === "envoyé" ? "ok" : "visit"}">${m.status === "envoyé" ? "Envoyé" : "Brouillon"}</span></div>
@@ -1514,6 +1604,7 @@ function bind() {
   all("[data-quickx]", b => b.onclick = () => { ui.dtab = "chat"; render(); ask(d, "Rédige un message pour proposer ou confirmer une visite gratuite au client."); });
   if (d) {
     // Quote editor
+    all("textarea.lbl", t => { const fit = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }; fit(); t.addEventListener("input", fit); t.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); t.blur(); } }; });
     all("[data-line] [data-f]", inp => { inp.onfocus = () => snapshot(d); inp.oninput = () => { const l = d.quote.lines.find(x => x.id === inp.closest("[data-line]").dataset.line); l[inp.dataset.f] = inp.dataset.f === "label" ? inp.value : inp.value.replace(",", "."); updateTotals(d); }; });
     all("[data-del]", b => b.onclick = () => { snapshot(d); d.quote.lines = d.quote.lines.filter(l => l.id !== b.dataset.del); save(); render(); });
     const mv = (i, j) => { if (j < 0 || j >= d.quote.lines.length) return; snapshot(d); const a = d.quote.lines; [a[i], a[j]] = [a[j], a[i]]; save(); render(); };
@@ -1532,6 +1623,13 @@ function bind() {
     on("mark-refused", () => { d.status = "refuse"; act(d, "Devis refusé"); save(); render(); });
     on("reopen", () => { d.status = "chiffrage"; save(); render(); });
     on("as-test", () => testFromDossier(d));
+    on("ns-dict", () => { ui.dtab = "chat"; render(); onMic(); });
+    const fi = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = el.onchange = () => { fn(el.value); save(); }; };
+    fi("f-name", v => d.client.name = v || "Client à préciser"); fi("f-phone", v => d.client.phone = v.trim()); fi("f-email", v => d.client.email = v.trim());
+    fi("f-address", v => d.client.address = v); fi("f-place", v => d.client.place = v); fi("f-title", v => d.title = v); fi("f-visit", v => d.visit = v);
+    const fs = document.getElementById("f-status"); if (fs) fs.onchange = () => { d.status = fs.value; if (fs.value === "envoye" && !d.sentAt) d.sentAt = Date.now(); act(d, "Statut : " + STATUS[fs.value].label); save(); render(); };
+    all("[data-delfact]", b => b.onclick = () => { d.facts.splice(+b.dataset.delfact, 1); save(); render(); });
+    all("[data-delmiss]", b => b.onclick = () => { const x = d.missing.splice(+b.dataset.delmiss, 1)[0]; act(d, "Réglé : " + x); save(); render(); });
     // Messages
     all("[data-mcopy]", b => b.onclick = () => { const m = d.messages.find(x => x.id === b.dataset.mcopy); copyText((m.subject ? "Objet : " + m.subject + "\n\n" : "") + m.body); });
     all("[data-medit]", b => b.onclick = () => { ui.editMsg = b.dataset.medit; render(); });

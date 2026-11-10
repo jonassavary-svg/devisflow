@@ -53,7 +53,7 @@
     }
     const tools = opts.tools || [];
     const defs = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: "object", properties: {} } }));
-    let lastText = "";
+    let lastText = "", done = 0;
     for (let step = 0; step < MAX_STEPS; step++) {
       const res = await post("/api/ai", { system: opts.system, messages, tools: defs });
       const content = Array.isArray(res.content) ? res.content : [];
@@ -71,6 +71,9 @@
         results.push({ type: "tool_result", tool_use_id: b.id, content: JSON.stringify(out === undefined ? { ok: true } : out), ...(isError ? { is_error: true } : {}) });
       }
       messages.push({ role: "user", content: results });
+      done += results.length;
+      const el = document.getElementById("live-reply");
+      if (el && !text) el.innerHTML = `<span class="spin"></span> Je travaille… ${done} action${done > 1 ? "s" : ""} faite${done > 1 ? "s" : ""}`;
     }
     return { text: lastText || "J'ai fait plusieurs modifications, vérifie le dossier." };
   }

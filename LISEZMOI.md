@@ -37,6 +37,16 @@ Puis ouvre **http://localhost:3000** dans Chrome, Edge ou Safari. Pour arrêter 
 
 Sans clé API, l'app fonctionne quand même (dossiers, devis, PDF), mais sans l'assistant IA.
 
+## Mettre à jour DevisFlow
+
+Si tu as installé avec `git clone`, dans le Terminal depuis le dossier DevisFlow :
+```
+git pull
+npm install
+npm start
+```
+Ton fichier `.env` et tes données (`data/`) ne sont pas touchés.
+
 ## Où sont mes données ?
 
 - Dans le dossier `data/` de DevisFlow (`data/devisflow.json`).

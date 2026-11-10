@@ -16,7 +16,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 // Fournisseur d'IA : Anthropic (Claude) ou OpenAI, selon la clé présente dans .env.
 const PROVIDER = (process.env.DEVISFLOW_PROVIDER || (process.env.ANTHROPIC_API_KEY ? "anthropic" : process.env.OPENAI_API_KEY ? "openai" : "")).toLowerCase();
 const MODEL = process.env.DEVISFLOW_MODEL || (PROVIDER === "openai" ? "gpt-5" : "claude-opus-5-5");
-const EFFORT = process.env.DEVISFLOW_EFFORT || "medium";
+const EFFORT = process.env.DEVISFLOW_EFFORT || (PROVIDER === "openai" ? "low" : "medium");
 const PUBLIC = path.join(here, "public");
 const DATA_DIR = process.env.DEVISFLOW_DATA || path.join(here, "data");
 const DATA_FILE = path.join(DATA_DIR, "devisflow.json");
@@ -28,7 +28,7 @@ const PRICES = { "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "clau
 
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 const hasKey = () => PROVIDER === "openai" ? Boolean(process.env.OPENAI_API_KEY) : PROVIDER === "anthropic" && Boolean(process.env.ANTHROPIC_API_KEY);
-const client = !hasKey() ? null : PROVIDER === "openai" ? new OpenAI() : new Anthropic();
+const client = !hasKey() ? null : PROVIDER === "openai" ? new OpenAI({ timeout: 120000, maxRetries: 1 }) : new Anthropic({ timeout: 180000, maxRetries: 1 });
 
 /* ---------- Données ---------- */
 function readData() {
@@ -114,6 +114,8 @@ function toOpenAI(body) {
 async function callOpenAI(body) {
   const tools = cleanTools(body.tools).map(t => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
   const req = { model: MODEL, messages: toOpenAI(body), max_completion_tokens: 16000 };
+  // Les modèles GPT-5 réfléchissent avant de répondre : "low" garde l'assistant rapide.
+  if (/^(gpt-5|o\d)/.test(MODEL)) req.reasoning_effort = EFFORT;
   if (tools.length) req.tools = tools;
   const res = await client.chat.completions.create(req);
   logUsage(MODEL, res.usage);
@@ -178,7 +180,13 @@ const server = http.createServer(async (req, res) => {
       if (!client) return send(res, 503, { code: "no_key", error: "Pas de clé API : ajoute ANTHROPIC_API_KEY ou OPENAI_API_KEY dans le fichier .env puis relance l'app." });
       const body = await readBody(req);
       if (!Array.isArray(body.messages) || !body.messages.length) return send(res, 400, { code: "bad_request", error: "messages manquants" });
-      try { return send(res, 200, PROVIDER === "openai" ? await callOpenAI(body) : await callClaude(body)); }
+      const t0 = Date.now();
+      try {
+        const out = PROVIDER === "openai" ? await callOpenAI(body) : await callClaude(body);
+        const used = out.content.filter(b => b.type === "tool_use").map(b => b.name);
+        console.log(`[IA] réponse en ${((Date.now() - t0) / 1000).toFixed(1)} s${used.length ? " · actions : " + used.join(", ") : " · terminé"}`);
+        return send(res, 200, out);
+      }
       catch (e) { const [st, code, msg] = aiError(e); console.error("[IA]", code, msg); return send(res, st, { code, error: msg }); }
     }
     if (url.pathname.startsWith("/api/")) return send(res, 404, { error: "not_found" });

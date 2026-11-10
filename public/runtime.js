@@ -53,15 +53,16 @@
     }
     const tools = opts.tools || [];
     const defs = tools.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema || { type: "object", properties: {} } }));
-    let lastText = "", done = 0;
+    let lastText = "", done = 0; const t0 = performance.now();
+    const finish = (text) => ({ text, ms: Math.round(performance.now() - t0), steps: Math.ceil(messages.filter(m => m.role === "assistant").length) });
     for (let step = 0; step < MAX_STEPS; step++) {
-      const res = await post("/api/ai", { system: opts.system, messages, tools: defs });
+      const res = await post("/api/ai", { system: opts.system, messages, tools: defs, speed: opts.speed });
       const content = Array.isArray(res.content) ? res.content : [];
       messages.push({ role: "assistant", content }); // renvoyé tel quel, sans modification
       const text = content.filter(b => b.type === "text").map(b => b.text).join("\n").trim();
       if (text) { lastText = text; if (opts.onText) try { opts.onText({ text }); } catch (e) {} }
-      if (res.stop_reason === "refusal") return { text: lastText || "Je ne peux pas traiter cette demande." };
-      if (res.stop_reason !== "tool_use") return { text: lastText };
+      if (res.stop_reason === "refusal") return finish(lastText || "Je ne peux pas traiter cette demande.");
+      if (res.stop_reason !== "tool_use") return finish(lastText);
       const results = [];
       for (const b of content.filter(b => b.type === "tool_use")) {
         const t = tools.find(x => x.name === b.name);
@@ -71,11 +72,14 @@
         results.push({ type: "tool_result", tool_use_id: b.id, content: JSON.stringify(out === undefined ? { ok: true } : out), ...(isError ? { is_error: true } : {}) });
       }
       messages.push({ role: "user", content: results });
+      // Gain de temps : si l'IA a déjà répondu et n'a appelé que des outils « de fin » (boutons de réponse), on s'arrête là.
+      const calls = content.filter(b => b.type === "tool_use");
+      if (text && opts.finalTools && calls.length && calls.every(b => opts.finalTools.includes(b.name)) && results.every(r => !r.is_error)) return finish(text);
       done += results.length;
       const el = document.getElementById("live-reply");
       if (el && !text) el.innerHTML = `<span class="spin"></span> Je travaille… ${done} action${done > 1 ? "s" : ""} faite${done > 1 ? "s" : ""}`;
     }
-    return { text: lastText || "J'ai fait plusieurs modifications, vérifie le dossier." };
+    return finish(lastText || "J'ai fait plusieurs modifications, vérifie le dossier.");
   }
   sample.json = async function (prompt, opts = {}) {
     const r = await sample([{ role: "user", content: prompt + "\n\nRéponds uniquement avec le JSON, sans texte autour." }], { images: opts.images, system: opts.system });

@@ -22,6 +22,10 @@ const DATA_DIR = process.env.DEVISFLOW_DATA || path.join(here, "data");
 const DATA_FILE = path.join(DATA_DIR, "devisflow.json");
 const BACKUP_DIR = path.join(DATA_DIR, "sauvegardes");
 const LOG_FILE = path.join(DATA_DIR, "ia-usage.jsonl");
+const JOURNAL = path.join(DATA_DIR, "ia-journal.jsonl");
+// Mode de l'IA choisi dans Paramètres -> niveau de réflexion du modèle.
+const SPEEDS = { openai: { rapide: "minimal", equilibre: "low", precis: "medium" }, anthropic: { rapide: "low", equilibre: "medium", precis: "high" } };
+const effortFor = (speed) => (SPEEDS[PROVIDER] || {})[speed] || EFFORT;
 const MAX_BODY = 25 * 1024 * 1024;
 const STARTED = String(Date.now()); // change à chaque redémarrage : la page se recharge après une mise à jour
 // Prix indicatifs en USD par million de tokens (entrée, sortie), pour estimer la facture.
@@ -67,17 +71,31 @@ function usageThisMonth() {
   return { month, calls, usd: Math.round(usd * 100) / 100 };
 }
 
+/* ---------- Journal de l'IA (pour comprendre une erreur ou une lenteur) ---------- */
+function lastUserText(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]; if (m.role !== "user") continue;
+    const t = (Array.isArray(m.content) ? m.content : [{ type: "text", text: String(m.content) }]).filter(b => b.type === "text").map(b => b.text).join(" ");
+    if (t) return t.split("MESSAGE DE L'ARTISAN :").pop().trim().slice(0, 600);
+  }
+  return "";
+}
+function journal(entry) {
+  fs.appendFile(JOURNAL, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n", () => {});
+  try { if (fs.statSync(JOURNAL).size > 5e6) { const keep = fs.readFileSync(JOURNAL, "utf8").split("\n").slice(-2000).join("\n"); fs.writeFileSync(JOURNAL, keep); } } catch { /* rien */ }
+}
+
 /* ---------- Appel à Claude ---------- */
 function cleanTools(tools) {
   if (!Array.isArray(tools)) return [];
   return tools.slice(0, 40).map(t => ({ name: String(t.name), description: String(t.description || ""), input_schema: t.input_schema && typeof t.input_schema === "object" ? t.input_schema : { type: "object", properties: {} } }));
 }
-async function callClaude(body) {
+async function callClaude(body, effort) {
   const req = {
     model: MODEL,
     max_tokens: 16000,
     messages: body.messages,
-    output_config: { effort: EFFORT }
+    output_config: { effort }
   };
   // Si un filtre de sécurité refuse à tort, l'API réessaie sur un autre modèle.
   if (/^claude-(opus|sonnet|fable)/.test(MODEL)) { req.betas = ["server-side-fallback-2026-07-01"]; req.fallbacks = "default"; }
@@ -112,13 +130,19 @@ function toOpenAI(body) {
   }
   return out;
 }
-async function callOpenAI(body) {
+async function callOpenAI(body, effort) {
   const tools = cleanTools(body.tools).map(t => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
   const req = { model: MODEL, messages: toOpenAI(body), max_completion_tokens: 16000 };
   // Les modèles GPT-5 réfléchissent avant de répondre : "low" garde l'assistant rapide.
-  if (/^(gpt-5|o\d)/.test(MODEL)) req.reasoning_effort = EFFORT;
+  if (/^(gpt-5|o\d)/.test(MODEL)) req.reasoning_effort = effort;
   if (tools.length) req.tools = tools;
-  const res = await client.chat.completions.create(req);
+  let res;
+  try { res = await client.chat.completions.create(req); }
+  catch (e) {
+    // Certains modèles n'acceptent pas tous les niveaux : on réessaie en "low".
+    if (e instanceof OpenAI.BadRequestError && req.reasoning_effort && req.reasoning_effort !== "low" && /reasoning/i.test(e.message)) { req.reasoning_effort = "low"; res = await client.chat.completions.create(req); }
+    else throw e;
+  }
   logUsage(MODEL, res.usage);
   const choice = res.choices[0] || {}, msg = choice.message || {}, content = [];
   if (msg.content) content.push({ type: "text", text: msg.content });
@@ -173,6 +197,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
     if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, started: STARTED, usage: usageThisMonth() });
+    if (url.pathname === "/api/journal") {
+      let lines = []; try { lines = fs.readFileSync(JOURNAL, "utf8").trim().split("\n").slice(-400); } catch { /* vide */ }
+      res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "content-disposition": `attachment; filename="devisflow-journal-ia.jsonl"` });
+      return res.end(lines.join("\n") + "\n");
+    }
     if (url.pathname === "/api/data" && req.method === "GET") return send(res, 200, readData() || {});
     if (url.pathname === "/api/data" && (req.method === "PUT" || req.method === "POST")) {
       writeData(await readBody(req)); return send(res, 200, { ok: true });
@@ -181,14 +210,16 @@ const server = http.createServer(async (req, res) => {
       if (!client) return send(res, 503, { code: "no_key", error: "Pas de clé API : ajoute ANTHROPIC_API_KEY ou OPENAI_API_KEY dans le fichier .env puis relance l'app." });
       const body = await readBody(req);
       if (!Array.isArray(body.messages) || !body.messages.length) return send(res, 400, { code: "bad_request", error: "messages manquants" });
-      const t0 = Date.now();
+      const t0 = Date.now(), effort = effortFor(body.speed);
       try {
-        const out = PROVIDER === "openai" ? await callOpenAI(body) : await callClaude(body);
+        const out = PROVIDER === "openai" ? await callOpenAI(body, effort) : await callClaude(body, effort);
         const used = out.content.filter(b => b.type === "tool_use").map(b => b.name);
-        console.log(`[IA] réponse en ${((Date.now() - t0) / 1000).toFixed(1)} s${used.length ? " · actions : " + used.join(", ") : " · terminé"}`);
+        const ms = Date.now() - t0;
+        console.log(`[IA] réponse en ${(ms / 1000).toFixed(1)} s (${effort})${used.length ? " · actions : " + used.join(", ") : " · terminé"}`);
+        journal({ ms, model: MODEL, effort, step: body.messages.filter(m => m.role === "assistant").length + 1, demande: lastUserText(body.messages), actions: out.content.filter(b => b.type === "tool_use").map(b => ({ outil: b.name, donnees: b.input })), reponse: out.content.filter(b => b.type === "text").map(b => b.text).join(" ").slice(0, 600), fin: out.stop_reason });
         return send(res, 200, out);
       }
-      catch (e) { const [st, code, msg] = aiError(e); console.error("[IA]", code, msg); return send(res, st, { code, error: msg }); }
+      catch (e) { const [st, code, msg] = aiError(e); console.error("[IA]", code, msg); journal({ ms: Date.now() - t0, model: MODEL, effort, erreur: msg }); return send(res, st, { code, error: msg }); }
     }
     if (url.pathname.startsWith("/api/")) return send(res, 404, { error: "not_found" });
     // Fichiers de l'application

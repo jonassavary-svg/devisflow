@@ -5,47 +5,35 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
 ## Installation (une seule fois, environ 10 minutes)
 
 1. **Installer Node.js** (version 20.12 ou plus récente) : télécharge la version « LTS » sur https://nodejs.org et installe-la.
-2. **Télécharger DevisFlow** : sur la page GitHub du projet, bouton vert « Code », puis « Download ZIP ». Décompresse le dossier, par exemple dans `Documents/devisflow`.
-3. **Ouvrir le Terminal** (Mac : touches Cmd + Espace, tape « Terminal ») et va dans le dossier :
+2. **Télécharger DevisFlow avec git** (pour les mises à jour automatiques). Dans le Terminal (Cmd + Espace, tape « Terminal ») :
    ```
-   cd ~/Documents/devisflow
+   cd ~/Desktop
+   git clone https://github.com/jonassavary-svg/devisflow.git
+   cd devisflow
    ```
-4. **Installer les dépendances** :
-   ```
-   npm install
-   ```
-5. **Ajouter une clé API** pour l'assistant IA, au choix :
-   - **OpenAI** : crée une clé sur https://platform.openai.com/api-keys et ajoute un peu de crédit (5 à 10 $ suffisent pour commencer) ;
-   - **ou Anthropic (Claude)** : crée une clé sur https://console.anthropic.com (menu « API Keys ») et ajoute un peu de crédit.
-
-   Puis copie le fichier modèle :
+   Si le Mac propose d'installer les « outils de développement », accepte, puis relance la commande `git clone`.
+3. **Ajouter une clé API** pour l'assistant IA, au choix OpenAI (https://platform.openai.com/api-keys) ou Anthropic (https://console.anthropic.com), avec un peu de crédit (5 à 10 $ suffisent pour commencer) :
    ```
    cp .env.example .env
+   open -e .env
    ```
-   Ouvre `.env` avec TextEdit et colle ta clé après `OPENAI_API_KEY=` (ou après `ANTHROPIC_API_KEY=`), puis enregistre. Une seule clé suffit.
+   Colle ta clé après `OPENAI_API_KEY=` (ou après `ANTHROPIC_API_KEY=`), puis enregistre (Cmd + S). Une seule clé suffit.
+4. **Installer DevisFlow en continu** :
+   ```
+   bash installer-mac.sh
+   ```
+   C'est tout. L'app s'ouvre sur **http://localhost:3000**.
 
-## Lancer l'app
+## Au quotidien
 
-Au démarrage, le Terminal affiche « Assistant IA : actif (OpenAI, gpt-5) » si la clé est bien lue.
-
-
-Dans le Terminal, depuis le dossier DevisFlow :
-```
-npm start
-```
-Puis ouvre **http://localhost:3000** dans Chrome, Edge ou Safari. Pour arrêter : Ctrl + C dans le Terminal.
+- DevisFlow tourne en permanence, même après un redémarrage du Mac : ouvre simplement http://localhost:3000 (ajoute-le à tes favoris).
+- **Mises à jour automatiques** : toutes les 2 minutes, DevisFlow regarde s'il y a une nouvelle version sur GitHub, l'installe et redémarre. La page se recharge toute seule quand tu n'es pas en train d'écrire.
+- Ton fichier `.env` et tes données (`data/`) ne sont jamais touchés par les mises à jour.
+- Journal (en cas de problème) : `~/Library/Logs/DevisFlow.log`. Pour le voir : `open ~/Library/Logs/DevisFlow.log`
+- Pour arrêter DevisFlow et ne plus le lancer au démarrage : `bash desinstaller-mac.sh`
+- Après avoir changé ta clé dans `.env` : relance `bash installer-mac.sh` pour que le changement soit pris en compte.
 
 Sans clé API, l'app fonctionne quand même (dossiers, devis, PDF), mais sans l'assistant IA.
-
-## Mettre à jour DevisFlow
-
-Si tu as installé avec `git clone`, dans le Terminal depuis le dossier DevisFlow :
-```
-git pull
-npm install
-npm start
-```
-Ton fichier `.env` et tes données (`data/`) ne sont pas touchés.
 
 ## Où sont mes données ?
 

@@ -1231,6 +1231,16 @@ function shrink(file, max, png) {
 }
 render();
 if (!SERVER_DATA || !SERVER_DATA.dossiers) save();
+// Après une mise à jour, le serveur redémarre : on recharge la page dès qu'on ne dérange pas.
+setInterval(async () => {
+  try {
+    const st = await (await fetch("/api/status", { cache: "no-store" })).json();
+    if (!window.__DF_AI || !st.started || st.started === window.__DF_AI.started) return;
+    if (ui.thinking || ui.evalRunning || ui.draft.trim() || ui.editMsg || document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (saveT) { clearTimeout(saveT); await pushSave(); }
+    location.reload();
+  } catch (e) {}
+}, 20000);
 </script>
 
 </body>

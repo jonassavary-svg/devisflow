@@ -23,6 +23,7 @@ const DATA_FILE = path.join(DATA_DIR, "devisflow.json");
 const BACKUP_DIR = path.join(DATA_DIR, "sauvegardes");
 const LOG_FILE = path.join(DATA_DIR, "ia-usage.jsonl");
 const MAX_BODY = 25 * 1024 * 1024;
+const STARTED = String(Date.now()); // change à chaque redémarrage : la page se recharge après une mise à jour
 // Prix indicatifs en USD par million de tokens (entrée, sortie), pour estimer la facture.
 const PRICES = { "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5], "gpt-5": [1.25, 10], "gpt-5-mini": [0.25, 2] };
 
@@ -165,13 +166,13 @@ function readBody(req) {
 function indexHtml() {
   const html = fs.readFileSync(path.join(PUBLIC, "index.html"), "utf8");
   const data = JSON.stringify(readData()).replace(/</g, "\\u003c");
-  return html.replace("<!--DF_DATA-->", `<script>window.__DF_DATA = ${data}; window.__DF_AI = ${JSON.stringify({ ready: hasKey(), model: MODEL })};</script>`);
+  return html.replace("<!--DF_DATA-->", `<script>window.__DF_DATA = ${data}; window.__DF_AI = ${JSON.stringify({ ready: hasKey(), model: MODEL, started: STARTED })};</script>`);
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
-    if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, usage: usageThisMonth() });
+    if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, started: STARTED, usage: usageThisMonth() });
     if (url.pathname === "/api/data" && req.method === "GET") return send(res, 200, readData() || {});
     if (url.pathname === "/api/data" && (req.method === "PUT" || req.method === "POST")) {
       writeData(await readBody(req)); return send(res, 200, { ok: true });

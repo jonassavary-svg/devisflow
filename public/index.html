@@ -176,6 +176,14 @@ table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .draft-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; background: var(--accent-soft); color: var(--ink); border: 0; border-radius: 12px; padding: 10px 14px; font: 400 13px var(--body); cursor: pointer; }
 .draft-bar b { font-family: var(--display); font-size: 14px; }
 .draft-bar > span:last-child { color: var(--accent); font-weight: 600; }
+.acts { align-self: stretch; font-size: 12.5px; color: var(--muted); padding: 2px 4px; }
+.acts summary { cursor: pointer; list-style: none; color: var(--accent); font-weight: 600; }
+.acts summary::-webkit-details-marker { display: none; }
+.acts summary::after { content: " ›"; }
+.acts[open] summary::after { content: " ⌄"; }
+.acts > div { font-family: var(--mono); font-size: 11.5px; padding: 2px 0 2px 14px; }
+.acts.one { color: var(--accent); font-weight: 600; }
+.blabel { display: block; font-size: 11px; font-weight: 700; opacity: .8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
 .act { align-self: center; font-family: var(--mono); font-size: 11.5px; color: var(--tape-ink); background: var(--tape-soft); padding: 3px 10px; border-radius: 6px; max-width: 95%; }
 .sugg { display: flex; flex-direction: column; gap: 6px; }
 .sugg button { text-align: left; border: 1px dashed var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 8px 12px; font: 400 13.5px var(--body); cursor: pointer; }
@@ -337,7 +345,7 @@ label.btn { display: flex; align-items: center; justify-content: center; gap: 6p
 .next-step small { display: block; color: var(--muted); font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
 .next-step b { font-size: 14.5px; }
 .next-step .mini { white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 7px 12px; }
-.missing { border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+.missing { display: block; width: 100%; text-align: left; color: var(--ink); border: 0; cursor: pointer; font-family: var(--body); border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
 .quick { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .quick .mini { white-space: nowrap; flex: none; }
 .room { border: 1px solid var(--line); border-radius: 14px; padding: 6px 12px 4px; margin-bottom: 10px; }
@@ -707,7 +715,7 @@ function makeTools(target, isHome) {
 const RULES = `Tu es l'assistant DevisFlow d'un artisan suisse. Il t'envoie, comme à un collègue, des messages de clients collés (WhatsApp, SMS, email), des résumés d'appels, des notes de visite dictées (fautes de transcription possibles), des photos ou des instructions. Tu tiens ses dossiers, ses devis et ses brouillons de messages avec tes outils.
 Règles strictes :
 - Tu tutoies l'artisan (c'est ton patron). Tu vouvoies ou tutoies ses clients selon le réglage de l'entreprise.
-- N'ajoute au devis QUE les prestations que l'artisan ou le client a vraiment mentionnées. N'ajoute jamais de toi-même protection, déplacement, préparation, rebouchage ou autre poste. Exception : une consigne de l'artisan qui dit explicitement « toujours ajouter … ». Si la consigne dit « proposer », pose la question au lieu d'ajouter.
+- N'ajoute au devis QUE les prestations que l'artisan ou le client a vraiment mentionnées. N'ajoute jamais de toi-même protection, déplacement, préparation, rebouchage ou autre poste. Exception : une consigne de l'artisan qui dit explicitement « toujours ajouter … ». Si la consigne dit « proposer », pose la question au lieu d'ajouter, et n'ajoute la ligne qu'après un « oui » clair de l'artisan (jamais « en proposition »).
 - Demande vague (ex. « une porte à repeindre » sans détails) : crée ou complète le dossier, ajoute seulement ce qui est clair, note ce qui manque dans missing, et pose LA question la plus utile. Ne remplis pas le reste pour « faire complet ».
 - Ce qui est clair, ajoute-le tout de suite sans demander la permission : « une porte » = 1 pce de l'article du catalogue qui correspond (laque boiseries) ; « préparation et peinture des murs » sans surface = les deux lignes sans qty. Ensuite seulement, pose ta question sur ce qui manque (type de porte, surface…).
 - Ne touche pas au type de prix, à la validité ni à la remarque (set_quote_options) sauf si l'artisan le demande : les valeurs par défaut s'appliquent toutes seules.
@@ -729,11 +737,11 @@ Règles strictes :
 - Remise, type de prix, validité, remarque : set_quote_options (pour ce devis seulement). Si l'artisan fait un réglage qui pourrait servir à tous ses devis, propose de le garder par défaut et n'appelle set_default qu'après son accord.
 - Brouillon « Envoi du devis » : prépare-le de toi-même seulement quand le devis est complet (aucune info manquante dans missing, aucune quantité ni prix manquant) et que le client a un email ou un téléphone. Sinon, ne le prépare que si l'artisan le demande.
 - Emails et SMS : rédige-les avec save_message_draft (ton et signature de l'entreprise). Tu n'envoies jamais rien et tu ne promets ni prix ni délai sans l'artisan.
-- Mets à jour le dossier (faits, infos manquantes, statut) quand tu apprends quelque chose.
+- Mets à jour le dossier (faits, infos manquantes, statut) quand tu apprends quelque chose. missing = seulement ce qui manque pour chiffrer ou envoyer le devis (mesures, quantités, choix qui changent le prix), 3 éléments au maximum, très courts. Pas l'accès, les couleurs ou l'email sauf s'ils changent le prix ou empêchent l'envoi. Retire de missing ce qui est réglé.
 - Ne redemande pas une information connue. Quand ta question a des réponses typiques, appelle propose_choices.
 - Si un outil renvoie une erreur ou un avertissement, corrige ou signale-le à l'artisan au lieu de l'ignorer.
 - Si tu proposes des réponses rapides (propose_choices), écris ta réponse dans le même tour.
-- Réponds en français, en 1 à 3 phrases courtes : ce que tu as fait, puis au plus UNE question. Pas de listes, pas de markdown.`;
+- Réponds en français, en 1 à 3 phrases courtes. L'app affiche déjà la liste de tes modifications : ne la répète pas. Dis le résultat utile (ex. « Devis à jour : CHF 2'480.– TTC. ») puis au plus UNE question. Pas de listes, pas de markdown.`;
 // Historique envoyé à l'IA : messages, photos et actions faites entre deux messages (par l'IA ou à la main).
 function historyFor(chat, maxChars = 14000) {
   const out = []; let acts = [], photos = 0;
@@ -791,14 +799,12 @@ async function ask(d, override, opts = {}) {
       const moved = ui.homeChat.splice(0);
       const actions = t.chat.splice(ui.targetLen || 0);
       t.chat.push(...moved, ...actions, { role: "assistant", text: reply || "C'est noté." });
-      if (t.quote.lines.length) { const w = checkQuote(t); if (w.length) t.chat.push({ role: "action", text: "⚠ À vérifier : " + w.join(" · ") }); }
       save(); ui.dossierId = t.id; ui.dtab = "chat"; ui.tab = "dossiers"; render(); toast(`Dossier ${t.client.name}`);
       speak(reply); return;
     }
     ui.homeChat.push({ role: "assistant", text: reply || "C'est noté." });
     if (ui.savedNote) { ui.savedNote = null; toast("Enregistré dans tes notes"); }
   } else d.chat.push({ role: "assistant", text: reply || "C'est noté." });
-  if (d && d.quote.lines.length) { const w = checkQuote(d); if (w.length) d.chat.push({ role: "action", text: "⚠ À vérifier : " + w.join(" · ") }); }
   save(); refresh(); speak(reply);
 }
 function speak(t) { if (tts && ui.speak && t) tts.speak(t.slice(0, 1900)).catch(() => {}); }
@@ -906,12 +912,38 @@ function sendLinks(d, m) {
 }
 
 /* ================= Rendu : discussion ================= */
+// Message de l'artisan : on remplace les marqueurs techniques par une petite étiquette.
+function userBubble(text) {
+  let label = "", t = String(text || "");
+  const m = t.match(/^\[(.*?)\]\n/);
+  if (m) { t = t.slice(m[0].length); label = /^Note de l'artisan/.test(m[1]) ? "Note" + (m[1].split(" : ")[1] ? " · " + m[1].split(" : ")[1] : "") : /client/i.test(m[1]) ? "Message du client" : m[1]; }
+  const c = t.match(/^Client : (.*)\n/); if (c) t = t.slice(c[0].length);
+  if (/^Message du client :\n/.test(t)) { t = t.replace(/^Message du client :\n/, ""); label = "Message du client"; }
+  return `<div class="bubble me">${label ? `<span class="blabel">${esc(label)}</span>` : ""}${esc(t)}</div>`;
+}
+// Les actions faites pendant un tour : une seule ligne résumée, le détail se déplie.
+function actsHtml(list) {
+  const items = list.filter(x => !/^⚠ À vérifier/.test(x));
+  if (!items.length) return "";
+  const add = items.filter(x => x.startsWith("+ ")).length, chg = items.filter(x => x.startsWith("✎")).length, del = items.filter(x => x.startsWith("−")).length;
+  const other = items.filter(x => !/^(\+ |✎|−|↕|Dossier mis à jour)/.test(x));
+  const parts = [...other.map(x => x.replace(/ \(.*\)$/, "")), add && `${add} ligne${add > 1 ? "s" : ""} ajoutée${add > 1 ? "s" : ""}`, chg && `${chg} modifiée${chg > 1 ? "s" : ""}`, del && `${del} retirée${del > 1 ? "s" : ""}`].filter(Boolean);
+  if (!parts.length) parts.push("Dossier mis à jour");
+  const detail = items.filter(x => /^(\+ |✎|−|↕)/.test(x));
+  return detail.length ? `<details class="acts"><summary>✓ ${esc(parts.join(" · "))}</summary>${detail.map(x => `<div>${esc(x)}</div>`).join("")}</details>` : `<div class="acts one">✓ ${esc(parts.join(" · "))}</div>`;
+}
 function chatHtml(chat) {
-  return chat.map(m => {
-    if (m.role === "photo") return `<div class="bubble me"><img src="${m.url}" alt="Photo" style="width:140px;border-radius:8px;display:block"></div>`;
-    if (m.role === "action") return `<div class="act">${esc(m.text)}</div>`;
-    return `<div class="bubble ${m.role === "user" ? "me" : "bot"}">${esc(m.text)}</div>`;
-  }).join("") + (ui.thinking ? `<div class="bubble bot" id="live-reply"><span class="spin"></span></div>` : "")
+  let out = "", acts = [];
+  const flush = () => { out += actsHtml(acts); acts = []; };
+  chat.forEach(m => {
+    if (m.role === "action") { acts.push(m.text); return; }
+    flush();
+    if (m.role === "photo") out += `<div class="bubble me"><img src="${m.url}" alt="Photo" style="width:140px;border-radius:8px;display:block"></div>`;
+    else if (m.role === "user") out += userBubble(m.text);
+    else out += `<div class="bubble bot">${esc(m.text)}</div>`;
+  });
+  flush();
+  return out + (ui.thinking ? `<div class="bubble bot" id="live-reply"><span class="spin"></span></div>` : "")
     + (!ui.thinking && ui.choices.length ? `<div class="choices qr">${ui.choices.map((c, i) => `<button data-qr="${i}">${esc(c)}</button>`).join("")}</div>` : "");
 }
 function composer(placeholder) {
@@ -1097,7 +1129,7 @@ function quickFor(d) {
   return q.map(i => `<button class="mini" data-quick="${i}">${["Prépare le mail d'envoi", "Prépare une relance", "Qu'est-ce qui manque ?", "Remise de 5 %"][i]}</button>`).join("");
 }
 function dChat(d) {
-  return `${d.missing.length ? `<div class="missing"><b>Manque encore :</b> ${d.missing.map(esc).join(" · ")}</div>` : ""}
+  return `${d.missing.length ? `<button class="missing" data-dtab="fiche"><b>${d.missing.length} info${d.missing.length > 1 ? "s" : ""} manquante${d.missing.length > 1 ? "s" : ""}</b> : ${esc(d.missing.slice(0, 2).join(", "))}${d.missing.length > 2 ? "…" : ""} <span style="float:right">›</span></button>` : ""}
     <div class="chat" id="chat">${chatHtml(d.chat)}</div>
     <div class="quick">${quickFor(d)}</div>
     ${composer("Parle ou écris à l'IA pour ce dossier…")}`;
@@ -1388,6 +1420,7 @@ const BUILTIN_TESTS = [
   { id: "t17", name: "Modifie le mail au lieu d'en créer un autre", setup: [["Salon", "prep", 40], ["Salon", "paint", 40]], setupMessages: [{ kind: "Envoi du devis", subject: "Votre devis", body: "Bonjour Madame Rochat,\n\nVeuillez trouver ci-joint notre devis pour le salon. Nous restons à votre disposition pour toute question.\n\nMeilleures salutations" }], input: "Dans le mail d'envoi, ajoute que je peux commencer début janvier.", oneMessage: "janvier" },
   { id: "t18", name: "Connaît la date de visite", dossier: { visit: "jeudi 9h" }, input: "C'est quand déjà la visite chez elle ?", replyHas: ["jeudi"], noLines: true },
   { id: "h1", name: "Reconnaît un client existant (accueil)", home: true, input: "[Message de client collé]\nBonjour, c'est Mme Rochat de Marly. Finalement on aimerait aussi repeindre le plafond du salon, il fait 20 m². Bonne journée", expect: [["ceil", 20]], sameDossier: true },
+  { id: "t19", name: "« Proposer » ne veut pas dire ajouter", input: "Salon 45 m² de murs, plafond 20. Chambre 32 m² de murs, une porte. Préparation et peinture partout, plus le déplacement.", aiNotes: "Toujours proposer la protection des sols pour les intérieurs.", expect: [["prep", 77], ["paint", 77], ["ceil", 20], ["wood", 1], ["travel", 1]], absent: ["protect"], clean: true, noIds: true, maxReply: 260 },
   { id: "t13", name: "Message d'envoi", setup: [["Salon", "protect", 1], ["Salon", "prep", 40], ["Salon", "paint", 40], ["Général", "travel", 1]], input: "Prépare le mail pour envoyer le devis à la cliente.", message: true }
 ];
 function allTests() { return [...BUILTIN_TESTS.map(t => ({ ...t, catalogue: DEFAULT_SETTINGS.catalogue })), ...(S.tests || [])]; }
@@ -1423,6 +1456,7 @@ function gradeTest(t, d, reply, ms, extra = {}) {
   if (t.discount !== undefined) checks.push({ ok: close(num(d.quote.discount), t.discount, 0.001), text: `Remise : attendu ${t.discount} %, obtenu ${num(d.quote.discount)} %` });
   if (t.message) { const m = d.messages.find(x => /envoi/i.test(x.kind)); checks.push({ ok: !!m && /Rochat/.test(m.body) && /vous/i.test(m.body), text: "Brouillon « Envoi du devis » au nom de la cliente, en vouvoyant" }); }
   (t.hasLines || []).forEach(id => checks.push({ ok: d.quote.lines.some(l => l.label === labelOf(id)), text: `${labelOf(id)} : ligne ajoutée (même sans quantité)` }));
+  if (t.maxReply) checks.push({ ok: String(reply || "").length <= t.maxReply, text: `Réponse courte (${String(reply || "").length} caractères, max ${t.maxReply})` });
   if (t.oneMessage) { const m = d.messages; checks.push({ ok: m.length === 1 && new RegExp(t.oneMessage, "i").test(m[0].body), text: `Un seul brouillon, modifié (contient « ${t.oneMessage} »), obtenu ${m.length} brouillon(s)` }); }
   if (t.sameDossier) checks.push({ ok: extra.dossierCount === 1 && extra.sameTarget, text: `Retrouve le dossier existant au lieu d'en créer un nouveau (${extra.dossierCount} dossier(s))` });
   if (t.noMessage) checks.push({ ok: !d.messages.length, text: "Pas de brouillon d'email tant que le devis n'est pas complet" });

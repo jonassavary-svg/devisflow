@@ -1,0 +1,14 @@
+{
+  "name": "devisflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DevisFlow : demandes, devis et relances pour artisans, avec assistant IA",
+  "type": "module",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0"
+  }
+}

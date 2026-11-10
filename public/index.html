@@ -732,7 +732,7 @@ function todos() {
 function viewHome() {
   const t = todos(), open = D.filter(d => ["envoye"].includes(d.status)).reduce((a, d) => a + totals(d).tot, 0);
   const acc = D.filter(d => d.status === "accepte").reduce((a, d) => a + totals(d).tot, 0);
-  return `${!(window.__DF_AI && window.__DF_AI.ready) ? `<div class="warnbox"><b>Assistant IA non activé.</b> Ajoute ta clé API Anthropic dans le fichier <code>.env</code>, puis relance l'app (voir LISEZMOI.md). Le reste de l'app fonctionne.</div>` : ""}
+  return `${!(window.__DF_AI && window.__DF_AI.ready) ? `<div class="warnbox"><b>Assistant IA non activé.</b> Ajoute ta clé API (Anthropic ou OpenAI) dans le fichier <code>.env</code>, puis relance l'app (voir LISEZMOI.md). Le reste de l'app fonctionne.</div>` : ""}
     <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés</p></div>
     <div class="big-new">
       <h3>Nouvelle demande ou info</h3>

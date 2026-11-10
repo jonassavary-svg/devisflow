@@ -14,15 +14,20 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
    ```
    npm install
    ```
-5. **Ajouter ta clé API Anthropic** (pour l'assistant IA) :
-   - crée une clé sur https://console.anthropic.com (menu « API Keys ») et ajoute un peu de crédit (5 à 10 $ suffisent pour commencer) ;
-   - copie le fichier modèle :
-     ```
-     cp .env.example .env
-     ```
-   - ouvre `.env` avec TextEdit et colle ta clé après `ANTHROPIC_API_KEY=`, puis enregistre.
+5. **Ajouter une clé API** pour l'assistant IA, au choix :
+   - **OpenAI** : crée une clé sur https://platform.openai.com/api-keys et ajoute un peu de crédit (5 à 10 $ suffisent pour commencer) ;
+   - **ou Anthropic (Claude)** : crée une clé sur https://console.anthropic.com (menu « API Keys ») et ajoute un peu de crédit.
+
+   Puis copie le fichier modèle :
+   ```
+   cp .env.example .env
+   ```
+   Ouvre `.env` avec TextEdit et colle ta clé après `OPENAI_API_KEY=` (ou après `ANTHROPIC_API_KEY=`), puis enregistre. Une seule clé suffit.
 
 ## Lancer l'app
+
+Au démarrage, le Terminal affiche « Assistant IA : actif (OpenAI, gpt-5) » si la clé est bien lue.
+
 
 Dans le Terminal, depuis le dossier DevisFlow :
 ```
@@ -53,5 +58,5 @@ Quand un vrai devis est juste, ouvre-le, onglet **Devis**, bouton **Utiliser com
 ## Bon à savoir
 
 - **Dictée** : utilise la reconnaissance vocale du navigateur. Dans Chrome, l'audio passe par les serveurs de Google pour être transcrit.
-- **Coût de l'IA** : affiché dans Paramètres (« Utilisation de l'IA ce mois »). Modèle utilisé : `claude-opus-5-5`, réglable dans `.env`.
+- **Coût de l'IA** : affiché dans Paramètres (« Utilisation de l'IA ce mois »). Modèle utilisé : `gpt-5` avec une clé OpenAI, `claude-opus-5-5` avec une clé Anthropic, réglable dans `.env`.
 - **Sur le téléphone** : cette version locale est faite pour l'ordinateur. La version en ligne (téléphone, plusieurs artisans, TestFlight) est l'étape suivante.

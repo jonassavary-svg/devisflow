@@ -6,13 +6,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(path.join(here, ".env")); } catch { /* pas de fichier .env : on continue */ }
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
-const MODEL = process.env.DEVISFLOW_MODEL || "claude-opus-5-5";
+// Fournisseur d'IA : Anthropic (Claude) ou OpenAI, selon la clé présente dans .env.
+const PROVIDER = (process.env.DEVISFLOW_PROVIDER || (process.env.ANTHROPIC_API_KEY ? "anthropic" : process.env.OPENAI_API_KEY ? "openai" : "")).toLowerCase();
+const MODEL = process.env.DEVISFLOW_MODEL || (PROVIDER === "openai" ? "gpt-5" : "claude-opus-5-5");
 const EFFORT = process.env.DEVISFLOW_EFFORT || "medium";
 const PUBLIC = path.join(here, "public");
 const DATA_DIR = process.env.DEVISFLOW_DATA || path.join(here, "data");
@@ -21,11 +24,11 @@ const BACKUP_DIR = path.join(DATA_DIR, "sauvegardes");
 const LOG_FILE = path.join(DATA_DIR, "ia-usage.jsonl");
 const MAX_BODY = 25 * 1024 * 1024;
 // Prix indicatifs en USD par million de tokens (entrée, sortie), pour estimer la facture.
-const PRICES = { "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5] };
+const PRICES = { "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5], "gpt-5": [1.25, 10], "gpt-5-mini": [0.25, 2] };
 
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
-const hasKey = () => Boolean(process.env.ANTHROPIC_API_KEY);
-const client = hasKey() ? new Anthropic() : null;
+const hasKey = () => PROVIDER === "openai" ? Boolean(process.env.OPENAI_API_KEY) : PROVIDER === "anthropic" && Boolean(process.env.ANTHROPIC_API_KEY);
+const client = !hasKey() ? null : PROVIDER === "openai" ? new OpenAI() : new Anthropic();
 
 /* ---------- Données ---------- */
 function readData() {
@@ -47,7 +50,7 @@ function writeData(obj) {
 
 /* ---------- Suivi des coûts IA ---------- */
 function logUsage(model, usage) {
-  const line = { at: new Date().toISOString(), model, in: (usage?.input_tokens || 0) + (usage?.cache_creation_input_tokens || 0) + (usage?.cache_read_input_tokens || 0), out: usage?.output_tokens || 0 };
+  const line = { at: new Date().toISOString(), model, in: (usage?.input_tokens || usage?.prompt_tokens || 0) + (usage?.cache_creation_input_tokens || 0) + (usage?.cache_read_input_tokens || 0), out: usage?.output_tokens || usage?.completion_tokens || 0 };
   fs.appendFile(LOG_FILE, JSON.stringify(line) + "\n", () => {});
 }
 function usageThisMonth() {
@@ -56,7 +59,7 @@ function usageThisMonth() {
   try {
     for (const l of fs.readFileSync(LOG_FILE, "utf8").split("\n")) {
       if (!l.startsWith(`{"at":"${month}`)) continue;
-      const u = JSON.parse(l); const p = PRICES[u.model] || PRICES["claude-opus-5-5"];
+      const u = JSON.parse(l); const p = PRICES[u.model] || PRICES[MODEL] || [4, 20];
       calls++; usd += (u.in * p[0] + u.out * p[1]) / 1e6;
     }
   } catch { /* pas encore de journal */ }
@@ -84,7 +87,56 @@ async function callClaude(body) {
   logUsage(MODEL, res.usage);
   return { content: res.content, stop_reason: res.stop_reason };
 }
+/* ---------- Appel à OpenAI ----------
+   L'app parle le format des messages de Claude (blocs text / image / tool_use / tool_result).
+   On traduit vers le format Chat Completions d'OpenAI, puis la réponse dans l'autre sens. */
+function toOpenAI(body) {
+  const out = [];
+  if (body.system) out.push({ role: "system", content: String(body.system) });
+  for (const m of body.messages) {
+    const blocks = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content;
+    if (m.role === "assistant") {
+      const text = blocks.filter(b => b.type === "text").map(b => b.text).join("\n");
+      const calls = blocks.filter(b => b.type === "tool_use").map(b => ({ id: b.id, type: "function", function: { name: b.name, arguments: JSON.stringify(b.input || {}) } }));
+      out.push({ role: "assistant", content: text || null, ...(calls.length ? { tool_calls: calls } : {}) });
+    } else {
+      for (const b of blocks.filter(b => b.type === "tool_result")) out.push({ role: "tool", tool_call_id: b.tool_use_id, content: typeof b.content === "string" ? b.content : JSON.stringify(b.content) });
+      const parts = [];
+      for (const b of blocks) {
+        if (b.type === "text") parts.push({ type: "text", text: b.text });
+        if (b.type === "image" && b.source?.type === "base64") parts.push({ type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } });
+      }
+      if (parts.length) out.push({ role: "user", content: parts });
+    }
+  }
+  return out;
+}
+async function callOpenAI(body) {
+  const tools = cleanTools(body.tools).map(t => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } }));
+  const req = { model: MODEL, messages: toOpenAI(body), max_completion_tokens: 16000 };
+  if (tools.length) req.tools = tools;
+  const res = await client.chat.completions.create(req);
+  logUsage(MODEL, res.usage);
+  const choice = res.choices[0] || {}, msg = choice.message || {}, content = [];
+  if (msg.content) content.push({ type: "text", text: msg.content });
+  for (const c of msg.tool_calls || []) {
+    let input = {}; try { input = JSON.parse(c.function.arguments || "{}"); } catch { input = {}; }
+    content.push({ type: "tool_use", id: c.id, name: c.function.name, input });
+  }
+  const stop = (msg.tool_calls || []).length ? "tool_use" : choice.finish_reason === "content_filter" ? "refusal" : choice.finish_reason === "length" ? "max_tokens" : "end_turn";
+  return { content, stop_reason: stop };
+}
+function openaiError(e) {
+  if (e instanceof OpenAI.AuthenticationError) return [401, "bad_key", "La clé OpenAI est refusée. Vérifie OPENAI_API_KEY dans le fichier .env."];
+  if (e instanceof OpenAI.PermissionDeniedError) return [403, "not_granted", "Cette clé OpenAI n'a pas accès au modèle demandé."];
+  if (e instanceof OpenAI.RateLimitError) return [429, "rate_limited", "Trop de demandes ou crédit OpenAI épuisé, réessaie plus tard."];
+  if (e instanceof OpenAI.BadRequestError) return [400, "bad_request", e.message];
+  if (e instanceof OpenAI.APIConnectionError) return [502, "offline", "Pas de connexion à l'API OpenAI. Vérifie internet."];
+  if (e instanceof OpenAI.APIError) return [502, "upstream_error", e.message];
+  return [500, "server_error", String(e?.message || e)];
+}
 function aiError(e) {
+  if (PROVIDER === "openai") return openaiError(e);
   if (e instanceof Anthropic.AuthenticationError) return [401, "bad_key", "La clé API est refusée. Vérifie ANTHROPIC_API_KEY dans le fichier .env."];
   if (e instanceof Anthropic.PermissionDeniedError) return [403, "not_granted", "Cette clé API n'a pas accès au modèle demandé."];
   if (e instanceof Anthropic.RateLimitError) return [429, "rate_limited", "Trop de demandes en même temps, réessaie dans quelques secondes."];
@@ -117,16 +169,16 @@ function indexHtml() {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
-    if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), model: MODEL, effort: EFFORT, usage: usageThisMonth() });
+    if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, usage: usageThisMonth() });
     if (url.pathname === "/api/data" && req.method === "GET") return send(res, 200, readData() || {});
     if (url.pathname === "/api/data" && (req.method === "PUT" || req.method === "POST")) {
       writeData(await readBody(req)); return send(res, 200, { ok: true });
     }
     if (url.pathname === "/api/ai" && req.method === "POST") {
-      if (!client) return send(res, 503, { code: "no_key", error: "Pas de clé API : ajoute ANTHROPIC_API_KEY dans le fichier .env puis relance l'app." });
+      if (!client) return send(res, 503, { code: "no_key", error: "Pas de clé API : ajoute ANTHROPIC_API_KEY ou OPENAI_API_KEY dans le fichier .env puis relance l'app." });
       const body = await readBody(req);
       if (!Array.isArray(body.messages) || !body.messages.length) return send(res, 400, { code: "bad_request", error: "messages manquants" });
-      try { return send(res, 200, await callClaude(body)); }
+      try { return send(res, 200, PROVIDER === "openai" ? await callOpenAI(body) : await callClaude(body)); }
       catch (e) { const [st, code, msg] = aiError(e); console.error("[IA]", code, msg); return send(res, st, { code, error: msg }); }
     }
     if (url.pathname.startsWith("/api/")) return send(res, 404, { error: "not_found" });
@@ -144,6 +196,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`\nDevisFlow est lancé : http://localhost:${PORT}`);
-  console.log(hasKey() ? `Assistant IA : actif (${MODEL}, effort ${EFFORT})` : "Assistant IA : INACTIF, ajoute ta clé dans le fichier .env (voir LISEZMOI.md)");
+  console.log(hasKey() ? `Assistant IA : actif (${PROVIDER === "openai" ? "OpenAI" : "Anthropic"}, ${MODEL})` : "Assistant IA : INACTIF, ajoute ta clé dans le fichier .env (voir LISEZMOI.md)");
   console.log(`Données : ${DATA_FILE}\n`);
 });

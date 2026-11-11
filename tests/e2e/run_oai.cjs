@@ -1,0 +1,24 @@
+const { chromium } = require('playwright'); const { spawn } = require('child_process'); const fs = require('fs');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms)); const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
+(async () => {
+  fs.rmSync('data3', { recursive: true, force: true }); fs.rmSync('oai.jsonl', { force: true });
+  const mock = spawn('node', ['mock_oai.mjs']);
+  const s = spawn('node', ['server.js'], { cwd: require('path').join(__dirname, '..', '..'), env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: 'cle-de-test', OPENAI_BASE_URL: 'http://127.0.0.1:4011/v1', DEVISFLOW_DATA: __dirname + '/data3', PORT: '3103' } });
+  let out = ''; s.stdout.on('data', d => out += d); s.stderr.on('data', d => out += d);
+  await sleep(1200); ok(/OpenAI, gpt-5/.test(out), 'serveur en mode OpenAI');
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 400, height: 860 } }); const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:3103/?tests'); await sleep(1000);
+  ok(!(await p.locator('.warnbox', { hasText: 'non activé' }).count()), 'IA active');
+  await p.click('#start-msg'); await p.click('[data-src="moi"]'); await p.fill('#ask', 'nouveau client M. Martin à Marly'); await p.click('#dest-dossier'); await sleep(2000);
+  ok(await p.evaluate(() => D.some(d => d.client.name === 'M. Martin')), 'dossier créé via OpenAI');
+  await p.evaluate(() => openDossier('d1', 'chat')); await sleep(300);
+  await p.fill('#ask', 'Salon : murs 42 m² à préparer et à peindre, plafond 18 m². Une porte à laquer. Protection des sols.'); await p.click('#send-ask'); await sleep(2500);
+  ok(await p.evaluate(() => D.find(d => d.id === 'd1').quote.lines.length) === 5, 'devis chiffré via OpenAI');
+  const reqs = fs.readFileSync('oai.jsonl', 'utf8').trim().split('\n').map(JSON.parse); const last = reqs[reqs.length - 1].body;
+  ok(last.messages[0].role === 'system' && last.messages.some(m => m.role === 'tool') && last.tools[0].type === 'function' && last.model === 'gpt-5-mini', 'format OpenAI correct (system, tool, functions)');
+  const toolIdx = last.messages.findIndex(m => m.role === 'tool'); ok(last.messages[toolIdx - 1].tool_calls, 'résultats d\'outil juste après l\'appel');
+  await p.evaluate(() => go('settings')); await sleep(400); await p.evaluate(() => document.querySelectorAll('details.blk').forEach(x => x.open = true)); await sleep(200); await p.click('#run-tests'); await sleep(5000);
+  ok(await p.evaluate(() => ui.evalResults.t1 && ui.evalResults.t1.ok), 'tests de l\'IA fonctionnent avec OpenAI');
+  ok(/environ/.test(await p.locator('#ai-usage').textContent()), 'coût affiché : ' + await p.locator('#ai-usage').textContent());
+  console.log('erreurs', errs); await b.close(); s.kill(); mock.kill(); process.exit(0);
+})();

@@ -193,9 +193,21 @@ function indexHtml() {
   return html.replace("<!--DF_DATA-->", `<script>window.__DF_DATA = ${data}; window.__DF_AI = ${JSON.stringify({ ready: hasKey(), model: MODEL, started: STARTED })};</script>`);
 }
 
+// Sécurité : seule la page DevisFlow elle-même peut appeler l'API (pas un autre site ouvert dans le navigateur).
+const LOOPBACK = ["127.0.0.1", "localhost", "::1"].includes(HOST);
+function allowedCaller(req) {
+  const host = String(req.headers.host || "");
+  if (LOOPBACK && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host)) return false; // adresse détournée vers ce Mac
+  const origin = req.headers.origin;
+  if (origin) { try { if (new URL(origin).host !== host) return false; } catch { return false; } } // demande venue d'un autre site
+  if ((req.method === "POST" || req.method === "PUT") && !/^application\/json/i.test(String(req.headers["content-type"] || ""))) return false;
+  return true;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
+    if (url.pathname.startsWith("/api/") && !allowedCaller(req)) return send(res, 403, { code: "forbidden", error: "Demande refusée : elle ne vient pas de la page DevisFlow." });
     if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, started: STARTED, usage: usageThisMonth() });
     if (url.pathname === "/api/journal") {
       let lines = []; try { lines = fs.readFileSync(JOURNAL, "utf8").trim().split("\n").slice(-400); } catch { /* vide */ }

@@ -1,0 +1,30 @@
+const { chromium } = require('playwright'); const { spawn } = require('child_process'); const fs = require('fs');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
+(async () => {
+  fs.rmSync('data15', { recursive: true, force: true });
+  const mock = spawn('node', ['mock.mjs']);
+  const s = spawn('node', ['server.js'], { cwd: require('path').join(__dirname, '..', '..'), env: { ...process.env, ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: '', ANTHROPIC_BASE_URL: 'http://127.0.0.1:4010', DEVISFLOW_DATA: __dirname + '/data15', PORT: '3115' } });
+  await sleep(1200); const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 }); const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:3115/'); await sleep(800); await p.evaluate(() => go('settings')); await sleep(300); await p.evaluate(() => document.querySelectorAll('details.blk').forEach(x => x.open = true)); await sleep(200);
+  await p.click('#reset-blank'); await p.click('#reset-blank'); await sleep(500);
+  ok(await p.locator('#cat-manual').count() === 1 && await p.locator('label.dest-l').count() === 1, 'choix : importer ou saisir à la main');
+  await p.locator('#cat-manual').scrollIntoViewIfNeeded(); await p.evaluate(() => document.getElementById('toast').hidden = true); await p.screenshot({ path: __dirname + '/captures/catalogue-choix.png' });
+  await p.click('#cat-manual'); await sleep(300);
+  ok(await p.locator('[data-cf="label"]').count() === 1 && await p.getAttribute('[data-cf="label"]', 'placeholder') === 'Prestation, ex. Peinture des murs', 'une ligne vide avec exemples en gris');
+  await p.locator('.cat-item').first().scrollIntoViewIfNeeded(); await p.evaluate(() => document.getElementById('toast').hidden = true); await p.screenshot({ path: __dirname + '/captures/catalogue-ligne.png' });
+  await p.fill('[data-cf="label"]', 'Pose de carrelage'); await p.selectOption('[data-cf="unit"]', 'm²'); await p.fill('[data-cf="price"]', '85');
+  await p.click('#add-cat'); await sleep(200);
+  ok(await p.locator('[data-cf="label"]').count() === 2, '+ Ajouter une prestation');
+  await p.fill('#s-ai', 'Je ne travaille pas le samedi.');
+  await p.click('#save-all'); await sleep(800);
+  const d = JSON.parse(fs.readFileSync('data15/devisflow.json'));
+  ok(d.settings.catalogue.length === 1 && d.settings.catalogue[0].price === 85 && d.settings.aiNotes === 'Je ne travaille pas le samedi.', 'Enregistrer : catalogue (ligne vide retirée) et consignes sur le disque');
+  ok(/Enregistré à/.test(await p.locator('#save-status').innerText()), 'confirmation « Enregistré à … »');
+  await p.locator('#save-all').scrollIntoViewIfNeeded(); await p.screenshot({ path: __dirname + '/captures/enregistrer.png' });
+  // texte importé
+  fs.writeFileSync('prix.txt', 'Pose carrelage 85.-/m2\nJoints 12.-/m');
+  await p.click('details.more summary'); await p.setInputFiles('#oldquote-in', 'prix.txt'); await sleep(2000);
+  ok(await p.locator('[data-addsugg]').count() >= 1, 'import d\'un fichier texte : prestations proposées');
+  console.log('erreurs', errs); await b.close(); s.kill(); mock.kill(); process.exit(0);
+})();

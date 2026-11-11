@@ -2,3 +2,11 @@ node_modules/
 .env
 data/
 .DS_Store
+
+# Fichiers produits par les tests
+tests/e2e/data*/
+tests/e2e/captures/
+tests/e2e/*.png
+tests/e2e/*.pdf
+tests/e2e/*.jsonl
+tests/e2e/*.txt

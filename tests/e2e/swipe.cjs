@@ -1,0 +1,36 @@
+const { chromium } = require('playwright'); const { spawn } = require('child_process'); const fs = require('fs');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
+(async () => {
+  fs.rmSync('data10', { recursive: true, force: true });
+  const s = spawn('node', ['server.js'], { cwd: require('path').join(__dirname, '..', '..'), env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', DEVISFLOW_DATA: __dirname + '/data10', PORT: '3110' } });
+  await sleep(1200);
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 }); const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:3110/?tests'); await sleep(800);
+  await p.evaluate(() => go('dossiers')); await sleep(300);
+  const drag = async (sel) => { const bx = await p.locator(sel).first().boundingBox(); const y = bx.y + bx.height / 2;
+    await p.mouse.move(bx.x + bx.width - 30, y); await p.mouse.down(); for (let i = 1; i <= 8; i++) { await p.mouse.move(bx.x + bx.width - 30 - i * 18, y + 1); await sleep(16); } await p.mouse.up(); await sleep(300); };
+  const n0 = await p.evaluate(() => D.length);
+  await drag('.swipe .card');
+  ok(await p.locator('.swipe.open').count() === 1, 'glisser à gauche montre « Supprimer »');
+  ok(await p.evaluate(() => !ui.dossierId), 'glisser n\'ouvre pas le dossier');
+  await p.screenshot({ path: __dirname + '/captures/glisser-supprimer.png' });
+  await p.click('.swipe.open .swipe-del'); await sleep(300);
+  ok(await p.evaluate(() => D.length) === n0 - 1, 'dossier supprimé');
+  ok(await p.locator('#toast button').count() === 1, 'bouton Annuler');
+  await p.click('#toast button'); await sleep(300);
+  ok(await p.evaluate(() => D.length) === n0 && await p.evaluate(() => D[0].id) === 'd1', 'Annuler remet le dossier à sa place');
+  await drag('.swipe .card'); await p.locator('.swipe.open .card').click(); await sleep(200);
+  ok(await p.locator('.swipe.open').count() === 0 && await p.evaluate(() => !ui.dossierId), 'toucher la carte ouverte la referme');
+  await p.locator('.swipe .card').first().click(); await sleep(300);
+  ok(await p.evaluate(() => ui.dossierId === 'd1'), 'un simple toucher ouvre toujours le dossier');
+  await p.evaluate(() => { ui.dtab = 'fiche'; render(); }); await p.click('#del-dossier'); await sleep(300);
+  ok(await p.evaluate(() => !D.some(d => d.id === 'd1') && ui.tab === 'dossiers' && !ui.dossierId), 'supprimer depuis la Fiche');
+  // Notes
+  await p.evaluate(() => { newNote('Rappeler M. Python', 'Rappel'); newNote('Mesures salon', 'Salon'); go('notes'); }); await sleep(300);
+  await drag('.swipe .note-card'); await p.click('.swipe.open .swipe-del'); await sleep(300);
+  ok(await p.evaluate(() => N.length === 1 && N[0].title === 'Rappel'), 'note supprimée en glissant');
+  await sleep(1000); const disk = JSON.parse(fs.readFileSync('data10/devisflow.json'));
+  ok(disk.notes.length === 1 && !disk.dossiers.some(d => d.id === 'd1'), 'suppression enregistrée sur le disque');
+  console.log('erreurs', errs); await b.close(); s.kill(); process.exit(0);
+})();

@@ -1,0 +1,38 @@
+const { chromium } = require('playwright'); const { spawn, execSync } = require('child_process'); const fs = require('fs');
+const sleep = ms => new Promise(r => setTimeout(r, ms)); const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
+(async () => {
+  fs.rmSync('data16', { recursive: true, force: true });
+  const mock = spawn('node', ['mock.mjs']);
+  const s = spawn('node', ['server.js'], { cwd: require('path').join(__dirname, '..', '..'), env: { ...process.env, ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: '', ANTHROPIC_BASE_URL: 'http://127.0.0.1:4010', DEVISFLOW_DATA: __dirname + '/data16', PORT: '3116' } });
+  await sleep(1200); const b = await chromium.launch();
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true }); const p = await ctx.newPage(); const errs = [];
+  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  await p.goto('http://localhost:3116/'); await sleep(900); await p.evaluate(() => go('settings')); await sleep(300);
+  ok(await p.locator('details.blk').count() >= 7 && await p.locator('details.blk[open]').count() === 0, 'Paramètres : blocs tous fermés');
+  ok(await p.evaluate(() => document.documentElement.scrollHeight) < 1500, 'page courte (' + await p.evaluate(() => document.documentElement.scrollHeight) + ' px)');
+  await p.screenshot({ path: __dirname + '/captures/parametres-blocs.png' });
+  await p.click('details[data-blk="modele"] > summary'); await sleep(200);
+  ok(await p.locator('[data-tmode]').count() === 2, 'deux choix : mon propre devis / modèle DevisFlow');
+  ok(await p.locator('[data-color]').count() > 0, 'modèle DevisFlow : couleurs et logo');
+  await p.click('[data-tmode="own"]'); await sleep(200);
+  ok(await p.locator('details[data-blk="modele"][open]').count() === 1, 'le bloc reste ouvert après un choix');
+  ok(await p.locator('label[for="ownq-in"]').count() >= 1 && await p.locator('[data-color]').count() === 0, 'mon propre devis : bouton d\'import');
+  await p.setInputFiles('#ownq-in', require('path').join(__dirname, '..', '..', 'public/icon-180.png')); await sleep(2500);
+  const st = await p.evaluate(() => ({ mode: S.template.mode, own: S.ownQuote, pay: S.defaults.payment, valid: S.defaults.validityDays, sugg: ui.catSugg.length }));
+  ok(st.mode === 'own' && st.own && st.own.title === 'Offre' && st.own.color === '#9A3B26' && /^data:image/.test(st.own.thumb), 'devis importé : titre, couleur, aperçu');
+  ok(/acompte/.test(st.pay) && st.valid === 60, 'conditions de paiement et validité reprises');
+  ok(st.sugg === 1, 'prix trouvés proposés pour le catalogue');
+  await p.locator('details[data-blk="modele"]').scrollIntoViewIfNeeded(); await p.evaluate(() => document.getElementById('toast').hidden = true);
+  await p.locator('details[data-blk="modele"]').screenshot({ path: __dirname + '/captures/mon-propre-devis.png' });
+  const ctxt = await p.evaluate(() => companyForAgent()); ok(/DEVIS HABITUEL/.test(ctxt) && /Sikkens/.test(ctxt), 'l\'IA reçoit le style du devis');
+  await p.evaluate(() => openDossier('d2', 'pdf')); await p.waitForSelector('#pdf-view img.pdf-page', { timeout: 15000 });
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#pdf')]); await dl.saveAs('own.pdf');
+  const txt = execSync('pdftotext own.pdf -').toString().replace(/\s+/g, ' ');
+  ok(/OFFRE/.test(txt) && /Suite à notre visite/.test(txt) && /meilleures salutations/.test(txt) && /échafaudages/.test(txt), 'PDF : titre, intro, fin et conditions du devis importé');
+  ok((txt.match(/Offre valable/g) || []).length === 1 && (txt.match(/Paiement/g) || []).length === 1, 'pas de condition en double');
+  execSync(`pdftoppm -png -r 110 -singlefile own.pdf ${__dirname}/captures/pdf-inspire`);
+  // retour au modèle DevisFlow
+  await p.evaluate(() => go('settings')); await sleep(200); await p.click('[data-tmode="app"]'); await sleep(200);
+  ok(await p.evaluate(() => S.template.mode) === 'app' && await p.locator('[data-color]').count() > 0, 'retour au modèle DevisFlow');
+  console.log('erreurs', errs); await b.close(); s.kill(); mock.kill(); process.exit(0);
+})();

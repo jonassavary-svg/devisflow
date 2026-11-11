@@ -1,0 +1,21 @@
+const { chromium } = require('playwright'); const { spawn } = require('child_process'); const fs = require('fs');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
+(async () => {
+  fs.rmSync('data13', { recursive: true, force: true });
+  const s = spawn('node', ['server.js'], { cwd: require('path').join(__dirname, '..', '..'), env: { ...process.env, ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', DEVISFLOW_DATA: __dirname + '/data13', PORT: '3113' } });
+  await sleep(1200); const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 }); const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:3113/?tests'); await sleep(800); await p.evaluate(() => { newNote('x'); go('settings'); }); await sleep(300); await p.evaluate(() => document.querySelectorAll('details.blk').forEach(x => x.open = true)); await sleep(200);
+  await p.click('#reset-blank'); await p.click('#reset-blank'); await sleep(1500);
+  const d = JSON.parse(fs.readFileSync('data13/devisflow.json'));
+  ok(d.dossiers.length === 0 && d.notes.length === 0 && d.settings.catalogue.length === 0 && d.settings.company.name === '', 'tout est vide sur le disque');
+  ok(await p.evaluate(() => ui.tab === 'settings'), 'ouvre les Paramètres');
+  await p.click('details.more summary'); await p.selectOption('#tpl-trade', 'electricite'); await p.click('#tpl-apply'); await p.click('#tpl-apply'); await sleep(300);
+  await p.fill('#s-name', 'Élec Test Sàrl'); await sleep(300);
+  await p.evaluate(() => go('home')); await sleep(300);
+  ok(await p.locator('#go-settings').count() === 0, 'plus de bandeau « Pour commencer » une fois rempli');
+  await p.evaluate(() => { S.company.name = ''; render(); }); await sleep(200);
+  ok(await p.locator('#go-settings').count() === 1, 'bandeau « Pour commencer » si l\'entreprise est vide');
+  await p.screenshot({ path: 'blank-home.png' });
+  console.log('erreurs', errs); await b.close(); s.kill(); process.exit(0);
+})();

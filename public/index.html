@@ -1518,7 +1518,7 @@ function dPdf(d) {
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 // Devis PDF : en-tête entreprise, client, tableau par partie, totaux, conditions, signatures, pied de page.
 function buildPdf(d, kind) {
-  const I = kind === "facture" ? d.invoice : null, vat = I ? I.vat : S.vat, lines = I ? I.lines : lines, discount = I ? I.discount : d.quote.discount;
+  const I = kind === "facture" ? d.invoice : null, vat = I ? I.vat : S.vat, lines = I ? I.lines : d.quote.lines, discount = I ? I.discount : d.quote.discount;
   const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" }), c = S.company, t = I ? invTotals(d) : totals(d), own = S.template.mode === "own" && S.ownQuote ? S.ownQuote : null;
   const cl = own ? own.font === "serif" : S.template.style === "classique", plain = cl && !own;
   const L = 20, R = 190, W = R - L, font = cl ? "times" : "helvetica", acc = own ? hexRgb(own.color || S.template.color) : cl ? [30, 30, 30] : hexRgb(S.template.color), ink = [28, 34, 40], mute = [110, 118, 126];

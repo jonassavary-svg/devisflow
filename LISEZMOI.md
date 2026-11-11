@@ -65,3 +65,7 @@ Quand un vrai devis est juste, ouvre-le, onglet **Devis**, bouton **Utiliser com
 - **Dictée** : utilise la reconnaissance vocale du navigateur. Dans Chrome, l'audio passe par les serveurs de Google pour être transcrit.
 - **Coût de l'IA** : affiché dans Paramètres (« Utilisation de l'IA ce mois »). Modèle utilisé : `gpt-5-mini` avec une clé OpenAI, `claude-opus-5-5` avec une clé Anthropic, réglable dans `.env`.
 - **Sur le téléphone** : cette version locale est faite pour l'ordinateur. La version en ligne (téléphone, plusieurs artisans, TestFlight) est l'étape suivante.
+
+## Factures et paiements
+
+Dans un dossier accepté, l'onglet **Facture** crée la facture à partir du devis, avec le QR de paiement suisse (il faut ton IBAN et ton adresse « Rue 12, 1700 Fribourg » dans Paramètres). Tu notes « J'ai envoyé la facture », puis « Payée ». L'app suit l'échéance : quand un paiement est en retard, il apparaît dans « À faire » sur l'accueil, et le Mac affiche une notification (entre 8 h et 19 h, une seule fois par rappel). Toutes les factures sont dans Dossiers, filtre « Factures ». Les délais se règlent dans Paramètres, « Mes conditions ».

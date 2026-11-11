@@ -98,6 +98,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chip.visit { background: var(--tape-soft); color: var(--tape-ink); }
 .chip.sent { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
 .chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.late { background: #FBE9E7; color: #C0392B; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 
 .ai { background: var(--tape-soft); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
@@ -243,7 +244,7 @@ label.lab { font-size: 12px; color: var(--muted); display: flex; flex-direction:
 @keyframes sp { to { transform: rotate(360deg); } }
 @media (max-width: 360px) { .line-row { grid-template-columns: 56px auto 64px 1fr; } }
 /* v5 */
-.seg { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { border: 0; background: transparent; color: var(--muted); font: 600 12.5px var(--body); padding: 8px 2px; border-radius: 9px; cursor: pointer; position: relative; }
 .seg button[aria-current="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .seg .badge { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn); color: #fff; font-size: 10px; margin-left: 3px; }
@@ -419,6 +420,7 @@ code { font-family: var(--mono, monospace); font-size: .9em; }
 <body>
 <!--DF_DATA-->
 <script src="/vendor/jspdf.umd.min.js"></script>
+<script src="/vendor/qrcode.js"></script>
 <script src="/runtime.js"></script>
 
 <div class="shell">
@@ -610,12 +612,128 @@ const dossier = (id) => D.find(d => d.id === id);
 const cur = () => dossier(ui.dossierId);
 const qopt = (d, k) => d.quote[k] ?? S.defaults[k];
 const qno = (d) => new Date(d.created || Date.now()).getFullYear() + "-" + d.no;
-function totals(d) {
+function totals(d, vat) {
+  vat = vat || S.vat;
   const sub = d.quote.lines.reduce((a, l) => a + num(l.qty) * num(l.price), 0);
   const disc = sub * num(d.quote.discount) / 100, net = sub - disc;
-  const tva = S.vat.liable ? net * num(S.vat.rate) / 100 : 0;
+  const tva = vat.liable ? net * num(vat.rate) / 100 : 0;
   const raw = net + tva, tot = round05(raw);
   return { sub, disc, net, tva, rnd: tot - raw, tot };
+}
+/* ================= Factures : création, échéance, rappels, QR-facture ================= */
+if (window.qrcode) qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+const REMIND_AGAIN = 10; // jours entre deux rappels de paiement
+const dayStart = (ts) => { const x = new Date(ts); x.setHours(0, 0, 0, 0); return x.getTime(); };
+const payDays = () => num(S.defaults.payDays) || 30;
+const rappelDays = () => S.defaults.rappelDays === undefined || S.defaults.rappelDays === "" ? 5 : Math.max(0, num(S.defaults.rappelDays));
+// La facture garde sa propre copie des lignes : changer le devis ensuite ne change pas une facture déjà faite.
+const invDoc = (d) => Object.assign({}, d, { quote: Object.assign({}, d.quote, { lines: d.invoice.lines, discount: d.invoice.discount }) });
+const invTotals = (d) => totals(invDoc(d), d.invoice.vat);
+const invDue = (d) => dayStart(d.invoice.date) + num(d.invoice.days) * DAY; // jour de l'échéance (minuit)
+function nextInvNo() {
+  const y = new Date().getFullYear();
+  const n = Math.max(0, ...D.map(x => { const m = x.invoice && String(x.invoice.no).match(/^(\d{4})-(\d+)$/); return m && +m[1] === y ? +m[2] : 0; }));
+  return y + "-" + String(n + 1).padStart(3, "0");
+}
+function createInvoice(d) {
+  d.invoice = { no: nextInvNo(), date: Date.now(), days: payDays(), lines: clone(d.quote.lines), discount: num(d.quote.discount), vat: clone(S.vat), done: d.quote.period || "", sentAt: null, paidAt: null, reminders: [] };
+  if (d.status !== "accepte") d.status = "accepte";
+  act(d, `Facture ${d.invoice.no} créée depuis le devis (CHF ${chf(invTotals(d).tot)}).`);
+}
+// Où en est la facture : à envoyer, en attente, en retard, rappel à envoyer, payée.
+function invState(d, at) {
+  const i = d.invoice; if (!i) return null; const t = at || Date.now();
+  if (i.paidAt) return { k: "paye", label: "Payée", chip: "ok", t: `Facture payée le ${fmtDate(i.paidAt)}` };
+  if (!i.sentAt) return { k: "afaire", label: "Facture à envoyer", chip: "visit", t: "Facture à envoyer au client", todo: true };
+  const due = invDue(d), late = Math.floor((t - due) / DAY), n = (i.reminders || []).length;
+  const remindAt = n ? dayStart(i.reminders[n - 1]) + REMIND_AGAIN * DAY : due + (rappelDays() + 1) * DAY;
+  if (t >= remindAt) return { k: "rappel", label: "Rappel à envoyer", chip: "late", warn: true, todo: true, late, remindAt,
+    t: n ? `Toujours impayée : envoyer le ${n + 1}e rappel` : `Paiement en retard de ${late} jour${late > 1 ? "s" : ""} : envoyer un rappel` };
+  if (late >= 1) return { k: "retard", label: "En retard", chip: "late", late, remindAt, t: n ? `Rappel envoyé le ${fmtDate(i.reminders[n - 1])} · prochain rappel le ${fmtDate(remindAt)}` : `Échéance dépassée · rappel à envoyer le ${fmtDate(remindAt)}` };
+  return { k: "attente", label: "Facture envoyée", chip: "sent", remindAt, t: `Paiement attendu jusqu'au ${fmtDate(due)}` };
+}
+const chipFor = (d) => { const st = d.status === "accepte" && invState(d); return st ? `<span class="chip ${st.chip}">${st.label}</span>` : chip(d.status); };
+function invoiceMessage(d, kind) {
+  const i = d.invoice, v = S.email.address === "tu", hello = `Bonjour ${d.client.name.replace(/^(Mme|M\.)\s*/, v ? "" : "$1 ")},`, tot = "CHF " + chf(invTotals(d).tot), n = (i.reminders || []).length;
+  let subject, body;
+  if (kind === "rappel") {
+    subject = `${n ? (n + 1) + "e rappel" : "Rappel"} · facture ${i.no}`;
+    body = n
+      ? `${hello}\n\nMalgré ${v ? "mon" : "notre"} rappel du ${fmtDate(i.reminders[n - 1])}, la facture N° ${i.no} du ${fmtDate(i.date)} (${tot}), échue le ${fmtDate(invDue(d))}, n'est toujours pas réglée.\n\nMerci de faire le versement dans les 10 jours. La facture est jointe à ce message.\n\n${S.email.signature}`
+      : `${hello}\n\nSauf erreur de ${v ? "ma" : "notre"} part, la facture N° ${i.no} du ${fmtDate(i.date)} (${tot}), échue le ${fmtDate(invDue(d))}, n'a pas encore été réglée. C'est peut-être un simple oubli.\n\nMerci de faire le versement dans les 10 jours. La facture est jointe à ce message. Si le paiement est déjà parti, ${v ? "ne tiens" : "ne tenez"} pas compte de ce rappel.\n\n${S.email.signature}`;
+  } else {
+    subject = `Facture ${i.no} · ${d.title}`;
+    body = `${hello}\n\nLes travaux « ${d.title} » sont terminés. ${v ? "Tu trouveras" : "Vous trouverez"} ci-joint ${v ? "ma" : "notre"} facture N° ${i.no} d'un montant de ${tot}, payable jusqu'au ${fmtDate(invDue(d))}.\n\nMerci pour ${v ? "ta" : "votre"} confiance.\n\n${S.email.signature}`;
+  }
+  d.messages = d.messages.filter(m => !(m.status === "brouillon" && m.kind === (kind === "rappel" ? "Rappel de paiement" : "Envoi de la facture")));
+  d.messages.unshift({ id: uid(), kind: kind === "rappel" ? "Rappel de paiement" : "Envoi de la facture", subject, body, created: Date.now(), status: "brouillon" });
+}
+// --- QR-facture suisse (norme SIX, adresses structurées) ---
+const ibanClean = (x) => String(x || "").replace(/\s/g, "").toUpperCase();
+function mod97(str) { let r = 0; for (const ch of str) { const v = ch >= "A" && ch <= "Z" ? String(ch.charCodeAt(0) - 55) : ch; for (const c of v) r = (r * 10 + +c) % 97; } return r; }
+const ibanOk = (i) => /^(CH|LI)\d{2}[0-9A-Z]{17}$/.test(i) && mod97(i.slice(4) + i.slice(0, 4)) === 1;
+const isQrIban = (i) => { const iid = +i.slice(4, 9); return iid >= 30000 && iid <= 31999; };
+function qrrRef(x) { const tb = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5], b = String(x).replace(/\D/g, "").slice(-26).padStart(26, "0"); let c = 0; for (const ch of b) c = tb[(c + +ch) % 10]; return b + ((10 - c) % 10); }
+function scorRef(x) { const b = String(x).toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 21); return "RF" + String(98 - mod97(b + "RF00")).padStart(2, "0") + b; }
+const qrText = (x, max) => String(x || "").replace(/[\r\n\t]+/g, " ").replace(/[^ -~ -ſ’€]/g, "").replace(/\s+/g, " ").trim().slice(0, max);
+// « Rue des Artisans 12, 1700 Fribourg » -> rue, numéro, NPA, localité
+function swissAddr(name, address) {
+  const m = String(address || "").trim().match(/^(.*?)[,\s]*\b(?:CH[- ])?(\d{4})\s+(\D[^,]*?)\s*$/);
+  if (!m || !qrText(name, 70)) return null;
+  let street = m[1].replace(/[,\s]+$/, "").trim(), no = ""; const n = street.match(/^(.*\D)\s+(\d+\s?[a-zA-Z]?)$/); if (n) { street = n[1].trim(); no = n[2].replace(/\s/g, ""); }
+  return { name: qrText(name, 70), street: qrText(street, 70), no: qrText(no, 16), zip: m[2], town: qrText(m[3], 35), country: "CH" };
+}
+// Renvoie { text, ... } si le QR peut être fait, sinon { problems: [...] } (en clair pour l'artisan).
+function qrBill(d) {
+  const c = S.company, iban = ibanClean(c.iban), problems = [], amount = invTotals(d).tot;
+  if (!iban) problems.push("ton IBAN (Paramètres, Mon entreprise)"); else if (!ibanOk(iban)) problems.push("un IBAN suisse valable (celui des Paramètres contient une erreur)");
+  const cred = swissAddr(c.name, c.address); if (!cred) problems.push("le nom et l'adresse de ton entreprise sous la forme « Rue 12, 1700 Fribourg » (Paramètres)");
+  if (!(amount > 0)) problems.push("un montant plus grand que zéro");
+  if (problems.length) return { problems };
+  const debt = swissAddr(d.client.name, d.client.address);
+  const digits = String(d.invoice.no).replace(/\D/g, ""), qr = isQrIban(iban);
+  const ref = !digits ? "" : qr ? qrrRef(digits) : scorRef(digits), refType = !digits ? "NON" : qr ? "QRR" : "SCOR";
+  if (qr && !digits) return { problems: ["un numéro de facture avec des chiffres (obligatoire avec un QR-IBAN)"] };
+  const a = (x) => x ? ["S", x.name, x.street, x.no, x.zip, x.town, x.country] : ["", "", "", "", "", "", ""];
+  const msg = qrText("Facture " + d.invoice.no, 140);
+  const text = ["SPC", "0200", "1", iban, ...a(cred), ...a(null), amount.toFixed(2), "CHF", ...a(debt), refType, ref, msg, "EPD"].join("\n");
+  return { text, iban, cred, debt, ref, refType, amount, msg };
+}
+const group = (x, n, fromEnd) => fromEnd ? x.replace(new RegExp(`\\B(?=(.{${n}})+$)`, "g"), " ") : x.replace(new RegExp(`(.{${n}})(?=.)`, "g"), "$1 ");
+// Section paiement + récépissé, dans les 105 mm du bas de la page (mesures de la norme).
+function drawQrBill(doc, q, y0) {
+  const T = (size, bold) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(0, 0, 0); };
+  const amt = q.amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, " "), ibanF = group(q.iban, 4);
+  const refF = q.refType === "QRR" ? q.ref.slice(0, 2) + " " + group(q.ref.slice(2), 5) : q.refType === "SCOR" ? group(q.ref, 4) : "";
+  const addr = (x) => [x.name, [x.street, x.no].filter(Boolean).join(" "), x.zip + " " + x.town].filter(Boolean);
+  doc.setDrawColor(0); doc.setLineWidth(0.1); doc.setLineDashPattern([1, 1], 0); doc.line(0, y0, 210, y0); doc.line(62, y0, 62, 297); doc.setLineDashPattern([], 0);
+  T(6, false); doc.text("Avant le versement, à détacher", 105, y0 - 1.5, { align: "center" });
+  const corners = (x, y, w, h) => { const k = 3; doc.setLineWidth(0.26); [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]].forEach(([a, b, sx, sy]) => { doc.line(a, b, a + k * sx, b); doc.line(a, b, a, b + k * sy); }); };
+  // Récépissé (62 mm à gauche)
+  const block = (x, y, w, hs, ts, step, title, lines) => { T(hs, true); doc.text(title, x, y); y += step; T(ts, false); lines.forEach(l => { const ws = doc.splitTextToSize(l, w); doc.text(ws, x, y); y += ws.length * step; }); return y + step * 0.6; };
+  T(11, true); doc.text("Récépissé", 5, y0 + 9);
+  let y = y0 + 15;
+  y = block(5, y, 52, 6, 8, 3.2, "Compte / Payable à", [ibanF, ...addr(q.cred)]);
+  if (refF) y = block(5, y, 52, 6, 8, 3.2, "Référence", [refF]);
+  if (q.debt) block(5, y, 52, 6, 8, 3.2, "Payable par", addr(q.debt));
+  else { T(6, true); doc.text("Payable par (nom/adresse)", 5, y); corners(5, y + 1.5, 52, 20); }
+  T(6, true); doc.text("Monnaie", 5, y0 + 71); doc.text("Montant", 17, y0 + 71); T(8, false); doc.text("CHF", 5, y0 + 75); doc.text(amt, 17, y0 + 75);
+  T(6, true); doc.text("Point de dépôt", 57, y0 + 85, { align: "right" });
+  // Section paiement (148 mm à droite)
+  T(11, true); doc.text("Section paiement", 67, y0 + 9);
+  const qr = qrcode(0, "M"); qr.addData(q.text, "Byte"); qr.make();
+  const n = qr.getModuleCount(), m = 46 / n, qx = 67, qy = y0 + 17; doc.setFillColor(0, 0, 0);
+  for (let r = 0; r < n; r++) for (let c0 = 0; c0 < n; c0++) { if (!qr.isDark(r, c0)) continue; let c1 = c0; while (c1 + 1 < n && qr.isDark(r, c1 + 1)) c1++; doc.rect(qx + c0 * m, qy + r * m, (c1 - c0 + 1) * m + 0.02, m + 0.02, "F"); c0 = c1; }
+  const cx = qx + 23, cy = qy + 23; // croix suisse au centre, 7 x 7 mm
+  doc.setFillColor(255, 255, 255); doc.rect(cx - 3.5, cy - 3.5, 7, 7, "F"); doc.setFillColor(0, 0, 0); doc.rect(cx - 3, cy - 3, 6, 6, "F");
+  doc.setFillColor(255, 255, 255); doc.rect(cx - 0.58, cy - 1.95, 1.16, 3.9, "F"); doc.rect(cx - 1.95, cy - 0.58, 3.9, 1.16, "F");
+  T(8, true); doc.text("Monnaie", 67, y0 + 72); doc.text("Montant", 81, y0 + 72); T(10, false); doc.text("CHF", 67, y0 + 77); doc.text(amt, 81, y0 + 77);
+  y = y0 + 9;
+  y = block(118, y, 87, 8, 10, 3.9, "Compte / Payable à", [ibanF, ...addr(q.cred)]);
+  if (refF) y = block(118, y, 87, 8, 10, 3.9, "Référence", [refF]);
+  y = block(118, y, 87, 8, 10, 3.9, "Informations supplémentaires", [q.msg]);
+  if (q.debt) block(118, y, 87, 8, 10, 3.9, "Payable par", addr(q.debt));
+  else { T(8, true); doc.text("Payable par (nom/adresse)", 118, y); corners(118, y + 1.5, 65, 25); }
 }
 const STATUS = {
   nouveau: { label: "Nouvelle demande", chip: "new" }, visite: { label: "Visite prévue", chip: "visit" }, chiffrage: { label: "Devis en préparation", chip: "visit" },
@@ -628,7 +746,7 @@ function nextAction(d) {
   if (d.status === "visite") return { t: `Visite ${d.visit || "à planifier"}`, warn: false };
   if (d.status === "chiffrage") return missQ ? { t: `${missQ} info(s) à compléter`, warn: true } : { t: "Devis prêt à envoyer", warn: false };
   if (d.status === "envoye") { const due = d.sentAt + S.defaults.relanceDays * DAY; return Date.now() >= due ? { t: "À relancer", warn: true } : { t: `Relance le ${fmtDate(due)}`, warn: false }; }
-  if (d.status === "accepte") return { t: "Planifier le chantier", warn: false };
+  if (d.status === "accepte") { const st = invState(d); return st ? { t: st.t, warn: !!st.warn, todo: !!st.todo } : { t: "Chantier à faire, puis facturer", warn: false }; }
   return { t: "Clos", warn: false };
 }
 function snapshot(d) { const st = ui.undo[d.id] = ui.undo[d.id] || []; st.push(JSON.stringify(d.quote)); if (st.length > 30) st.shift(); }
@@ -698,6 +816,7 @@ function dossierForAgent(d) {
   created_on: dayText(d.created), visit: d.visit || null, quote_sent_on: dayText(d.sentAt), relance_due_on: d.status === "envoye" && d.sentAt ? dayText(d.sentAt + S.defaults.relanceDays * DAY) : null,
   photos: (d.photos || []).length, facts: d.facts, missing: d.missing,
   quote: { lines: linesForAgent(d), discount_percent: num(d.quote.discount), price_type: qopt(d, "priceType"), validity_days: qopt(d, "validityDays"), notes: qopt(d, "notes"), period: d.quote.period || null, totals: totals(d) },
+  invoice: d.invoice ? { invoice_no: d.invoice.no, total: invTotals(d).tot, sent_on: dayText(d.invoice.sentAt), due_on: dayText(invDue(d)), paid_on: dayText(d.invoice.paidAt), reminders_sent: (d.invoice.reminders || []).length, state: invState(d).t, note: "La facture se gère dans l'onglet Facture du dossier (création, envoi, paiement, rappel)." } : null,
   messages: d.messages.map(m => ({ message_id: m.id, kind: m.kind, subject: m.subject, status: m.status, body: String(m.body || "").slice(0, 1500) })) }; }
 function companyForAgent() {
   return `ENTREPRISE : ${S.company.name}, métier : ${S.company.trade || "?"}, ${S.company.address}. Le devis est rangé par : ${S.partLabel || "Pièce"} (champ room). Tél. ${S.company.phone || "?"}, email ${S.company.email || "?"}, IDE ${S.company.ide || "?"}. Responsable : ${S.company.contact || "?"}. Tarif régie : ${S.company.regie ? S.company.regie + " CHF/h" : "non indiqué"}. TVA : ${S.vat.liable ? "assujettie " + S.vat.rate + " %" : "non assujettie"}.
@@ -1017,7 +1136,8 @@ function sendLinks(d, m) {
   const out = [];
   if (d.client.email) out.push(`<a class="mini" target="_blank" href="mailto:${encodeURIComponent(d.client.email)}?subject=${subj}&body=${body}">Ouvrir dans Mail</a>`);
   if (phone.length >= 9) out.push(`<a class="mini" target="_blank" href="https://wa.me/${phone}?text=${body}">WhatsApp</a>`, `<a class="mini" href="sms:+${phone}&body=${body}">SMS</a>`);
-  if (d.quote.lines.length && /devis|relance/i.test(m.kind)) out.push(`<button class="mini" data-mpdf="${m.id}">Télécharger le PDF</button>`);
+  if (d.invoice && /facture|paiement/i.test(m.kind)) out.push(`<button class="mini" data-mfpdf="${m.id}">Télécharger la facture</button>`);
+  else if (d.quote.lines.length && /devis|relance/i.test(m.kind)) out.push(`<button class="mini" data-mpdf="${m.id}">Télécharger le PDF</button>`);
   return out.join("");
 }
 
@@ -1087,17 +1207,18 @@ function bindChoices() { document.querySelectorAll("[data-qr]").forEach(b => b.o
 function todos() {
   const out = [];
   D.forEach(d => { const n = nextAction(d); if (["refuse"].includes(d.status)) return;
-    if (n.warn || d.status === "nouveau" || d.status === "chiffrage" || d.status === "visite") out.push({ d, n }); });
+    if (n.warn || n.todo || d.status === "nouveau" || d.status === "chiffrage" || d.status === "visite") out.push({ d, n }); });
   return out.sort((a, b) => (b.n.warn - a.n.warn));
 }
 function viewHome() {
   if (ui.cap) return viewCapture();
   const t = todos(), open = D.filter(d => ["envoye"].includes(d.status)).reduce((a, d) => a + totals(d).tot, 0);
-  const acc = D.filter(d => d.status === "accepte").reduce((a, d) => a + totals(d).tot, 0);
+  const acc = D.filter(d => d.status === "accepte" && !d.invoice).reduce((a, d) => a + totals(d).tot, 0);
+  const owed = D.filter(d => d.invoice && d.invoice.sentAt && !d.invoice.paidAt), owedSum = owed.reduce((a, d) => a + invTotals(d).tot, 0);
   const saved = ui.lastNote && N.find(x => x.id === ui.lastNote);
   return `${!(window.__DF_AI && window.__DF_AI.ready) ? `<div class="warnbox"><b>Assistant IA non activé.</b> Ajoute ta clé API (Anthropic ou OpenAI) dans le fichier <code>.env</code>, puis relance l'app (voir LISEZMOI.md). Le reste de l'app fonctionne.</div>` : ""}
     ${!S.company.name || !S.catalogue.length ? `<div class="okbox" style="background:var(--accent-soft)"><span><b>Pour commencer :</b> ${!S.company.name ? "remplis ton entreprise" : ""}${!S.company.name && !S.catalogue.length ? " et " : ""}${!S.catalogue.length ? "ton catalogue de prix (ou charge un modèle de métier)" : ""} dans Paramètres.</span><button class="pill-btn" id="go-settings">Paramètres</button></div>` : ""}
-    <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés</p></div>
+    <div><h2>Bonjour</h2><p class="sub">${t.length} chose(s) à faire · CHF ${chf(open)} en attente de réponse · CHF ${chf(acc)} acceptés${owed.length ? ` · <button class="link" id="go-factures">CHF ${chf(owedSum)} de factures à encaisser</button>` : ""}</p></div>
     <div class="start">
       <button class="start-btn" id="start-dict">${ICONS.mic}Dicter<span>Appel, visite</span></button>
       <button class="start-btn" id="start-msg">${ICONS.paste}Message<span>Du client ou de toi</span></button>
@@ -1181,17 +1302,19 @@ function bindCapture() {
 }
 
 /* ================= Dossiers ================= */
-const FILTERS = [["tous", "Tous"], ["actifs", "En cours"], ["envoye", "Envoyés"], ["accepte", "Acceptés"], ["refuse", "Refusés"]];
+const FILTERS = [["tous", "Tous"], ["actifs", "En cours"], ["envoye", "Envoyés"], ["accepte", "Acceptés"], ["factures", "Factures"], ["refuse", "Refusés"]];
 function viewDossiers() {
   if (ui.dossierId) return viewDossier(cur());
   const f = ui.filter;
-  const list = D.filter(d => f === "tous" || (f === "actifs" ? ["nouveau", "visite", "chiffrage"].includes(d.status) : d.status === f));
-  return `<div><h2>Dossiers clients</h2><p class="sub">Une fiche par client : discussion, devis, PDF et messages.</p></div>
+  const list = D.filter(d => f === "tous" || (f === "factures" ? !!d.invoice : f === "actifs" ? ["nouveau", "visite", "chiffrage"].includes(d.status) : d.status === f));
+  if (f === "factures") list.sort((a, b) => (!!a.invoice.paidAt - !!b.invoice.paidAt) || (invDue(a) - invDue(b))); // impayées d'abord, la plus ancienne échéance en haut
+  const owed = D.filter(d => d.invoice && d.invoice.sentAt && !d.invoice.paidAt);
+  return `<div><h2>Dossiers clients</h2><p class="sub">${f === "factures" ? (owed.length ? `${owed.length} facture${owed.length > 1 ? "s" : ""} à encaisser : CHF ${chf(owed.reduce((a, d) => a + invTotals(d).tot, 0))}` : "Aucune facture en attente de paiement.") : "Une fiche par client : discussion, devis, PDF et messages."}</p></div>
     <div class="filters">${FILTERS.map(([k, l]) => `<button data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div>
-    <div class="list">${list.length ? list.map(d => { const n = nextAction(d); return `<div class="swipe"><button class="swipe-del" data-swdel="d:${d.id}">Supprimer</button><button class="card" data-open="${d.id}">
-      <div class="card-top"><span class="card-title">${esc(d.client.name)}</span>${chip(d.status)}</div>
-      <span class="card-sub">${esc(d.title)} · ${esc(d.client.place || "lieu ?")}</span>
-      <div class="card-foot"><span class="next ${n.warn ? "warn" : ""}">${esc(n.t)}</span><span class="amount">${d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "—"}</span></div>
+    <div class="list">${list.length ? list.map(d => { const n = nextAction(d); return `<div class="swipe"><button class="swipe-del" data-swdel="d:${d.id}">Supprimer</button><button class="card" data-open="${d.id}" ${d.invoice && f === "factures" ? 'data-odtab="facture"' : ""}>
+      <div class="card-top"><span class="card-title">${esc(d.client.name)}</span>${chipFor(d)}</div>
+      <span class="card-sub">${d.invoice && f === "factures" ? `Facture ${esc(d.invoice.no)} · échéance ${fmtDate(invDue(d))}` : `${esc(d.title)} · ${esc(d.client.place || "lieu ?")}`}</span>
+      <div class="card-foot"><span class="next ${n.warn ? "warn" : ""}">${esc(n.t)}</span><span class="amount">${d.invoice ? "CHF " + chf(invTotals(d).tot) : d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "—"}</span></div>
     </button></div>`; }).join("") + `<p class="hint" style="text-align:center">Glisse un dossier vers la gauche pour le supprimer.</p>` : `<p class="empty">Aucun dossier ici.</p>`}</div>`;
 }
 const ICON_TEL = '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
@@ -1210,17 +1333,21 @@ function nextStep(d) {
   }
   if (d.status === "envoye") { const due = (d.sentAt || Date.now()) + S.defaults.relanceDays * DAY;
     return Date.now() >= due ? { t: "À relancer", warn: true, btn: ["Préparer la relance", 'data-quick="1"'] } : { t: `En attente de réponse · relance le ${fmtDate(due)}`, btn: ["Réponse reçue", 'data-dtab="devis"'] }; }
-  if (d.status === "accepte") return { t: "Accepté : planifier le chantier" };
+  if (d.status === "accepte") { const st = invState(d);
+    if (!st) return { t: "Accepté : fais le chantier, puis la facture", btn: ["Créer la facture", 'data-dtab="facture"'] };
+    if (st.k === "rappel") return { t: st.t, warn: true, btn: ["Préparer le rappel", 'id="ns-rappel"'] };
+    return { t: st.t, btn: st.k === "paye" ? null : ["Voir la facture", 'data-dtab="facture"'] }; }
   return { t: "Dossier clos (refusé)" };
 }
 function viewDossier(d) {
   const drafts = d.messages.filter(m => m.status === "brouillon").length, c = d.client, ns = nextStep(d);
-  const tabs = [["chat", "Discussion"], ["devis", "Devis"], ["messages", "Messages"], ["fiche", "Fiche"]];
-  const cur = ui.dtab === "pdf" ? "devis" : ui.dtab;
+  const tabs = [["chat", "Discussion"], ["devis", "Devis"], ...(d.invoice || d.status === "accepte" ? [["facture", "Facture"]] : []), ["messages", "Messages"], ["fiche", "Fiche"]];
+  const cur = ui.dtab === "pdf" ? "devis" : ui.dtab === "fpdf" ? "facture" : ui.dtab;
+  const views = { chat: dChat, devis: dDevis, pdf: dPdf, facture: dFacture, fpdf: dPdf, messages: dMessages, fiche: dFiche };
   const where = d.site || c.address || c.place;
   return `<button class="back" id="back">‹ Dossiers</button>
     <div class="dcard">
-      <div class="dtop"><h2>${esc(c.name)}</h2><span id="dh-status">${chip(d.status)}</span></div>
+      <div class="dtop"><h2>${esc(c.name)}</h2><span id="dh-status">${chipFor(d)}</span></div>
       <div class="dsub"><span>${esc(d.title)}</span>${d.quote.lines.length ? `<b id="dh-total">CHF ${chf(totals(d).tot)}</b>` : `<span class="none">Pas encore de devis</span>`}</div>
       <div class="contacts">
         ${c.phone ? `<a href="tel:${esc(c.phone.replace(/\s/g, ""))}">${ICON_TEL}${esc(c.phone)}</a>` : `<button class="miss" data-dtab="fiche">+ Téléphone</button>`}
@@ -1230,7 +1357,7 @@ function viewDossier(d) {
       <div class="next-step ${ns.warn ? "warn" : ""}"><div><small>Prochaine étape</small><b>${esc(ns.t)}</b></div>${ns.btn ? `<button class="mini" ${ns.btn[1]}>${esc(ns.btn[0])}</button>` : ""}</div>
     </div>
     <div class="seg">${tabs.map(([k, l]) => `<button data-dtab="${k}" aria-current="${cur === k}">${l}${k === "messages" && drafts ? `<span class="badge">${drafts}</span>` : ""}</button>`).join("")}</div>
-    ${{ chat: dChat, devis: dDevis, pdf: dPdf, messages: dMessages, fiche: dFiche }[ui.dtab] ? { chat: dChat, devis: dDevis, pdf: dPdf, messages: dMessages, fiche: dFiche }[ui.dtab](d) : dChat(d)}`;
+    ${(views[ui.dtab] || dChat)(d)}`;
 }
 function quickFor(d) {
   const q = [];
@@ -1345,7 +1472,44 @@ function docHtml(d) {
     <div class="small">${esc(qopt(d, "notes"))}<br>Devis valable ${qopt(d, "validityDays")} jours. ${esc(S.defaults.payment)}</div>
     <div class="small" style="margin-top:8px">Bon pour accord, date et signature : ________________________</div></div>`;
 }
+function dateInput(ts) { const x = new Date(ts); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); }
+// Onglet Facture : créer la facture depuis le devis, l'envoyer, suivre l'échéance, noter le paiement, préparer les rappels.
+function dFacture(d) {
+  const i = d.invoice;
+  if (!i) return `<div class="panel"><div class="section-t" style="margin:0">Facture</div>
+      <p class="sub">${d.quote.lines.length ? `Quand le chantier est fini, crée la facture : elle reprend les lignes du devis (CHF ${chf(totals(d).tot)}) et ajoute le QR de paiement.` : "Il faut d'abord un devis avec des lignes."}</p>
+      <button class="btn primary" id="inv-create" ${d.quote.lines.length ? "" : 'disabled style="opacity:.5"'}>Créer la facture</button></div>`;
+  const st = invState(d), t = invTotals(d), q = qrBill(d), due = invDue(d), sent = !!i.sentAt, same = JSON.stringify([i.lines, num(i.discount)]) === JSON.stringify([d.quote.lines, num(d.quote.discount)]);
+  return `<p class="sub" style="margin:0">Facture N° ${esc(i.no)} · CHF ${chf(t.tot)} · <span class="chip ${st.chip}">${st.label}</span></p>
+    ${q.problems ? `<div class="warnbox"><b>Pas encore de QR de paiement sur cette facture.</b> Il manque : ${esc(q.problems.join(" ; "))}.</div>` : ""}
+    ${!sent ? `<div class="btn-row"><button class="btn ghost" id="inv-msg">Préparer le message</button><button class="btn primary" id="inv-sent">J'ai envoyé la facture</button></div>`
+      : !i.paidAt ? `<div class="btn-row"><button class="btn ghost" id="inv-rappel">Préparer un rappel</button><button class="btn primary" id="inv-paid">Payée ✓</button></div>`
+      : `<button class="btn ghost" id="inv-unpaid">Finalement pas payée</button>`}
+    <div class="toolbar"><button class="mini" data-dtab="fpdf">Aperçu de la facture</button>${downloads ? `<button class="mini" id="inv-pdf">Télécharger le PDF</button>` : ""}</div>
+    <div class="panel">
+      <div class="section-t" style="margin:0">Suivi</div>
+      <ul class="facts">
+        <li><span>Facture du ${fmtDate(i.date)}</span></li>
+        ${sent ? `<li><span>Envoyée le ${fmtDate(i.sentAt)}</span></li>` : ""}
+        <li><span>Échéance : <b>${fmtDate(due)}</b></span></li>
+        ${(i.reminders || []).map((r, k) => `<li><span>${k + 1}${k ? "e" : "er"} rappel envoyé le ${fmtDate(r)}</span></li>`).join("")}
+        ${i.paidAt ? `<li><span>Payée le ${fmtDate(i.paidAt)}</span></li>` : st.remindAt ? `<li><span>${st.k === "rappel" ? "Rappel à envoyer maintenant" : "Rappel à envoyer le " + fmtDate(st.remindAt) + " si rien n'est payé"}</span></li>` : ""}
+      </ul>
+    </div>
+    <details class="panel opts"><summary>Détails de la facture <span>${num(i.days)} jours · ${i.lines.length} ligne${i.lines.length > 1 ? "s" : ""}</span></summary>
+      <div class="grid2"><label class="lab">N° de facture<input class="field" id="inv-no" value="${esc(i.no)}"></label>
+        <label class="lab">Date<input class="field" id="inv-date" type="date" value="${dateInput(i.date)}"></label></div>
+      <div class="grid2"><label class="lab">Délai de paiement (jours)<input class="field" id="inv-days" inputmode="numeric" value="${num(i.days)}"></label>
+        <label class="lab">Travaux réalisés (facultatif)<input class="field" id="inv-done" value="${esc(i.done || "")}" placeholder="Ex. du 3 au 5 novembre"></label></div>
+      <p class="hint">Les lignes viennent du devis${same ? "." : " tel qu'il était à la création de la facture. Le devis a changé depuis."}</p>
+      ${same ? "" : `<button class="mini" id="inv-sync">Reprendre le devis actuel</button>`}
+      <button class="btn ghost" id="inv-del" style="color:#C0392B">Supprimer cette facture</button>
+    </details>`;
+}
 function dPdf(d) {
+  if (ui.dtab === "fpdf" && d.invoice) return `<div class="toolbar"><button class="mini" data-dtab="facture">‹ Retour à la facture</button></div>
+    <div class="paper-wrap" id="pdf-view"><p class="hint" style="text-align:center;margin:40px 0">Préparation de l'aperçu…</p></div>
+    ${downloads ? `<button class="btn primary" id="inv-pdf">Télécharger le PDF</button>` : `<p class="hint">Le téléchargement n'est pas disponible.</p>`}`;
   if (!d.quote.lines.length) return `<p class="empty">Le PDF apparaîtra ici dès que le devis aura des lignes.</p>`;
   return `<div class="toolbar"><button class="mini" data-dtab="devis">‹ Retour au devis</button><span class="hint" style="flex:1;text-align:right">${S.template.mode === "own" && S.ownQuote ? "Inspiré de ton devis" : `Modèle « ${S.template.style} »`} · Paramètres</span></div>
     <div class="paper-wrap" id="pdf-view"><p class="hint" style="text-align:center;margin:40px 0">Préparation de l'aperçu…</p></div>
@@ -1353,8 +1517,9 @@ function dPdf(d) {
 }
 function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 // Devis PDF : en-tête entreprise, client, tableau par partie, totaux, conditions, signatures, pied de page.
-function buildPdf(d) {
-  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" }), c = S.company, t = totals(d), own = S.template.mode === "own" && S.ownQuote ? S.ownQuote : null;
+function buildPdf(d, kind) {
+  const I = kind === "facture" ? d.invoice : null, vat = I ? I.vat : S.vat, lines = I ? I.lines : lines, discount = I ? I.discount : d.quote.discount;
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" }), c = S.company, t = I ? invTotals(d) : totals(d), own = S.template.mode === "own" && S.ownQuote ? S.ownQuote : null;
   const cl = own ? own.font === "serif" : S.template.style === "classique", plain = cl && !own;
   const L = 20, R = 190, W = R - L, font = cl ? "times" : "helvetica", acc = own ? hexRgb(own.color || S.template.color) : cl ? [30, 30, 30] : hexRgb(S.template.color), ink = [28, 34, 40], mute = [110, 118, 126];
   const tint = acc.map(v => Math.round(v + (255 - v) * 0.9)), grey = [245, 246, 247];
@@ -1366,10 +1531,10 @@ function buildPdf(d) {
   if (c.logo) { try { const ip = doc.getImageProperties(c.logo), h = 16, w = Math.min(36, h * ip.width / ip.height); doc.addImage(c.logo, L, y - 4, w, w * ip.height / ip.width); lx = L + w + 5; } catch (e) {} }
   set(14, "bold", plain ? ink : acc); doc.text(c.name || "Mon entreprise", lx, y + 1);
   set(8.5, "normal", mute);
-  const coLines = [c.address, [c.phone, c.email].filter(Boolean).join(" · "), c.ide ? c.ide + (S.vat.liable ? " TVA" : "") : ""].filter(Boolean);
+  const coLines = [c.address, [c.phone, c.email].filter(Boolean).join(" · "), c.ide ? c.ide + (vat.liable ? " TVA" : "") : ""].filter(Boolean);
   doc.text(coLines, lx, y + 6);
-  set(22, "bold", plain ? ink : acc); doc.text(own ? (own.title || "Devis").toUpperCase() : "DEVIS", R, y + 2, { align: "right" });
-  set(9, "normal", ink); doc.text([`N° ${qno(d)}`, `${coCity()}, le ${fmtDate(Date.now())}`], R, y + 8, { align: "right" });
+  set(22, "bold", plain ? ink : acc); doc.text(I ? "FACTURE" : own ? (own.title || "Devis").toUpperCase() : "DEVIS", R, y + 2, { align: "right" });
+  set(9, "normal", ink); doc.text([`N° ${I ? I.no : qno(d)}`, `${coCity()}, le ${fmtDate(I ? I.date : Date.now())}`], R, y + 8, { align: "right" });
   y = Math.max(y + 6 + coLines.length * 4, y + 16) + 6;
   doc.setDrawColor(...acc); doc.setLineWidth(plain ? 0.3 : 0.8); doc.line(L, y, R, y); y += 8;
   // Client et objet
@@ -1380,13 +1545,14 @@ function buildPdf(d) {
   set(9, "normal"); doc.text(doc.splitTextToSize([addr, cli.phone, cli.email].filter(Boolean).join("\n"), 70).slice(0, 3), R - 74, y + 10.5);
   set(7.5, "bold", mute); doc.text("CONCERNE", L, y);
   set(11.5, "bold"); const tl = doc.splitTextToSize(d.title || "", W - 88); doc.text(tl, L, y + 5.5);
-  set(9, "normal", mute); doc.text(ferme ? "Prix forfaitaire ferme" : "Devis estimatif", L, y + 6.5 + tl.length * 5);
-  let ly = y + 11 + tl.length * 5; doc.text(`Valable jusqu'au ${validUntil}`, L, ly);
-  const site = String(d.site || "").trim(), period = String(d.quote.period || "").trim();
+  set(9, "normal", mute); doc.text(I ? `Selon devis N° ${qno(d)}` : ferme ? "Prix forfaitaire ferme" : "Devis estimatif", L, y + 6.5 + tl.length * 5);
+  let ly = y + 11 + tl.length * 5; doc.text(I ? `Payable jusqu'au ${fmtDate(invDue(d))}` : `Valable jusqu'au ${validUntil}`, L, ly);
+  const site = String(d.site || "").trim(), period = I ? "" : String(d.quote.period || "").trim(), done = I ? String(I.done || "").trim() : "";
   if (site) { ly += 5; set(9, "normal", ink); const sw = doc.splitTextToSize("Lieu des travaux : " + site, W - 88); doc.text(sw, L, ly); ly += (sw.length - 1) * 4.2; }
   if (period) { ly += 5; set(9, "normal", ink); const pw = doc.splitTextToSize("Travaux prévus : " + period, W - 88); doc.text(pw, L, ly); ly += (pw.length - 1) * 4.2; }
+  if (done) { ly += 5; set(9, "normal", ink); const dw = doc.splitTextToSize("Travaux réalisés : " + done, W - 88); doc.text(dw, L, ly); ly += (dw.length - 1) * 4.2; }
   y = Math.max(y + 30, ly + 9);
-  if (own && own.intro) { set(9.5, "normal"); const iw = doc.splitTextToSize(own.intro, W); doc.text(iw, L, y - 4); y += iw.length * 4.3 + 2; }
+  if (own && own.intro && !I) { set(9.5, "normal"); const iw = doc.splitTextToSize(own.intro, W); doc.text(iw, L, y - 4); y += iw.length * 4.3 + 2; }
   // Tableau
   const cols = { q: 128, u: 132, p: 160, m: R };
   const header = () => {
@@ -1395,13 +1561,13 @@ function buildPdf(d) {
     doc.text("PRESTATION", L + 2, y); doc.text("QTÉ", cols.q, y, { align: "right" }); doc.text("UNITÉ", cols.u, y);
     doc.text("PRIX UNIT.", cols.p, y, { align: "right" }); doc.text("MONTANT", cols.m - 2, y, { align: "right" }); y += 8;
   };
-  const room = (r) => d.quote.lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
+  const room = (r) => lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
   header();
-  [...new Set(d.quote.lines.map(l => l.room))].forEach(r => {
+  [...new Set(lines.map(l => l.room))].forEach(r => {
     if (y > 250) { doc.addPage(); y = 22; header(); }
     set(9.5, "bold"); doc.text(r, L + 2, y); set(8.5, "normal", mute); doc.text(chf(room(r)), cols.m - 2, y, { align: "right" }); y += 2;
     doc.setDrawColor(210); doc.setLineWidth(0.2); doc.line(L, y, R, y); y += 5;
-    d.quote.lines.filter(l => l.room === r).forEach(l => {
+    lines.filter(l => l.room === r).forEach(l => {
       const w = doc.splitTextToSize(l.label, 96);
       if (y + w.length * 4.5 > 262) { doc.addPage(); y = 22; header(); }
       set(9.5, "normal"); doc.text(w, L + 4, y);
@@ -1416,18 +1582,29 @@ function buildPdf(d) {
   y += 2; const tx = 122;
   const row = (a, b, bold) => { set(9.5, bold ? "bold" : "normal"); doc.text(a, tx, y); doc.text(b, R - 2, y, { align: "right" }); y += 5.5; };
   row("Sous-total", chf(t.sub));
-  if (t.disc) { row(`Remise ${num(d.quote.discount)} %`, "-" + chf(t.disc)); row("Total hors TVA", chf(t.net)); }
-  if (S.vat.liable) row(`TVA ${String(S.vat.rate).replace(".", ",")} %`, chf(t.tva)); else row("Non assujetti à la TVA", "–");
+  if (t.disc) { row(`Remise ${num(discount)} %`, "-" + chf(t.disc)); row("Total hors TVA", chf(t.net)); }
+  if (vat.liable) row(`TVA ${String(vat.rate).replace(".", ",")} %`, chf(t.tva)); else row("Non assujetti à la TVA", "–");
   if (Math.abs(t.rnd) >= 0.005) row("Arrondi", chf(t.rnd));
   y += 1; doc.setFillColor(...(plain ? [30, 30, 30] : acc)); doc.roundedRect(tx - 3, y - 5, R - tx + 3, 9, 1.5, 1.5, "F");
   set(11, "bold", [255, 255, 255]); doc.text("TOTAL CHF", tx, y + 1); doc.text(chf(t.tot), R - 2, y + 1, { align: "right" }); y += 16;
+  // Facture : conditions de paiement, puis section paiement avec QR en bas de la dernière page
+  const Q = I ? qrBill(d) : null, qrOn = !!(Q && Q.text && window.qrcode);
+  if (I) {
+    if (y > 250) { doc.addPage(); y = 22; }
+    set(7.5, "bold", mute); doc.text("PAIEMENT", L, y); y += 5; set(9, "normal");
+    let last = y;
+    [`Payable jusqu'au ${fmtDate(invDue(d))} (${num(I.days)} jours net). Merci pour votre confiance.`, qrOn ? "" : c.iban ? `Compte : IBAN ${c.iban}, ${c.name}.` : ""].filter(Boolean)
+      .forEach(x => { const w = doc.splitTextToSize(x, W); doc.text(w, L, y); last = y + (w.length - 1) * 4.5; y += w.length * 4.5 + 1; });
+    if (qrOn) { if (last > 185) doc.addPage(); drawQrBill(doc, Q, 192); }
+  }
   // Conditions
+  if (!I) {
   if (y > 235) { doc.addPage(); y = 22; }
   set(7.5, "bold", mute); doc.text("CONDITIONS", L, y); y += 5;
   set(9, "normal");
   const ownCond = own ? (own.conditions || []).filter(x => !/valab|validit/i.test(x)) : [];
   const cond = [ferme ? "Prix forfaitaire ferme." : "Devis estimatif : le montant final dépend des quantités réellement exécutées.", `Offre valable ${vd} jours, jusqu'au ${validUntil}.`,
-    ownCond.some(x => /paiement|payable|net\b|acompte/i.test(x)) ? "" : S.defaults.payment, ...ownCond, own && ownCond.length ? d.quote.notes : qopt(d, "notes"), num(c.regie) ? `Tarif en régie : CHF ${chf(num(c.regie))} par heure${S.vat.liable ? ", hors TVA" : ""}.` : ""].filter(x => String(x || "").trim());
+    ownCond.some(x => /paiement|payable|net\b|acompte/i.test(x)) ? "" : S.defaults.payment, ...ownCond, own && ownCond.length ? d.quote.notes : qopt(d, "notes"), num(c.regie) ? `Tarif en régie : CHF ${chf(num(c.regie))} par heure${vat.liable ? ", hors TVA" : ""}.` : ""].filter(x => String(x || "").trim());
   cond.forEach(x => { const w = doc.splitTextToSize("• " + x, W); doc.text(w, L, y); y += w.length * 4.5 + 1; });
   if (own && own.closing) { if (y > 248) { doc.addPage(); y = 22; } y += 3; set(9.5, "normal"); const cw = doc.splitTextToSize(own.closing, W); doc.text(cw, L, y); y += cw.length * 4.3; }
   // Signatures
@@ -1435,10 +1612,12 @@ function buildPdf(d) {
   set(8.5, "normal", mute); doc.text(`Pour ${c.name || "l'entreprise"}`, L, y); doc.text("Bon pour accord, date et signature du client", 112, y);
   doc.setDrawColor(150); doc.setLineWidth(0.2); doc.line(L, y + 14, L + 68, y + 14); doc.line(112, y + 14, R, y + 14);
   if (c.contact) { set(9, "normal", ink); doc.text(c.contact, L, y + 19); }
+  }
   // Pied de page sur chaque page
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
-    doc.setPage(i); doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(L, 282, R, 282);
+    doc.setPage(i); if (qrOn && i === pages) { set(7.5, "normal", mute); doc.text(`Page ${i} / ${pages}`, R, 186, { align: "right" }); continue; }
+    doc.setDrawColor(220); doc.setLineWidth(0.2); doc.line(L, 282, R, 282);
     set(7.5, "normal", mute);
     doc.text([c.name, c.address, c.phone, c.email].filter(Boolean).join(" · "), L, 286, { maxWidth: W - 22 });
     if (c.iban || c.ide) doc.text([c.iban ? `IBAN ${c.iban}` : "", c.ide ? `IDE ${c.ide}` : ""].filter(Boolean).join(" · "), L, 290);
@@ -1448,12 +1627,12 @@ function buildPdf(d) {
 }
 // L'aperçu affiche le vrai PDF (mêmes pages que le fichier téléchargé).
 let pdfViewJob = 0;
-async function showPdfPreview(d) {
+async function showPdfPreview(d, kind) {
   const box = document.getElementById("pdf-view"); if (!box) return;
   const job = ++pdfViewJob;
   try {
     if (!window.jspdf) throw new Error("jspdf");
-    const data = buildPdf(d).output("arraybuffer");
+    const data = buildPdf(d, kind).output("arraybuffer");
     await loadPdfjs();
     const pdf = await pdfjsLib.getDocument({ data }).promise, imgs = [];
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -1462,28 +1641,28 @@ async function showPdfPreview(d) {
       imgs.push(c.toDataURL("image/png"));
     }
     if (job !== pdfViewJob || !document.body.contains(box)) return;
-    box.innerHTML = imgs.map((u, i) => `<img class="pdf-page" src="${u}" alt="Page ${i + 1} du devis">`).join("");
+    box.innerHTML = imgs.map((u, i) => `<img class="pdf-page" src="${u}" alt="Page ${i + 1} ${kind === "facture" ? "de la facture" : "du devis"}">`).join("");
   } catch (e) {
-    if (job === pdfViewJob && document.body.contains(box)) box.innerHTML = docHtml(d);
+    if (job === pdfViewJob && document.body.contains(box)) box.innerHTML = kind === "facture" ? `<p class="empty">L'aperçu n'a pas pu s'afficher. Télécharge le PDF pour le voir.</p>` : docHtml(d);
   }
 }
-async function makePdf(d) {
+async function makePdf(d, kind) {
   if (!window.jspdf) { toast("Le générateur PDF n'a pas pu se charger."); return; }
-  const doc = buildPdf(d);
-  try { await downloads.save({ filename: `devis-${qno(d)}.pdf`, data: doc.output("blob") }); toast("PDF enregistré"); }
+  const doc = buildPdf(d, kind);
+  try { await downloads.save({ filename: kind === "facture" ? `facture-${d.invoice.no}.pdf` : `devis-${qno(d)}.pdf`, data: doc.output("blob") }); toast("PDF enregistré"); }
   catch (e) { if (e && e.code !== "declined") toast("Le PDF n'a pas pu être enregistré ici."); }
 }
 
 /* ================= Messages ================= */
 function dMessages(d) {
   return `<p class="sub">Relis, puis envoie avec Mail, WhatsApp ou SMS (texte déjà rempli). Rien ne part sans toi.</p>
-    <div class="toolbar"><button class="mini" data-quick="0">+ Email d'envoi du devis</button><button class="mini" data-quick="1">+ Relance</button><button class="mini" data-quickx="visit">+ Confirmation de visite</button></div>
+    <div class="toolbar"><button class="mini" data-quick="0">+ Email d'envoi du devis</button><button class="mini" data-quick="1">+ Relance</button><button class="mini" data-quickx="visit">+ Confirmation de visite</button>${d.invoice && !d.invoice.paidAt ? `<button class="mini" id="inv-${d.invoice.sentAt ? "rappel" : "msg"}">+ ${d.invoice.sentAt ? "Rappel de paiement" : "Envoi de la facture"}</button>` : ""}</div>
     ${d.messages.length ? d.messages.map(m => `<div class="msgcard">
       <div class="card-top"><span class="section-t">${esc(m.kind)}</span><span class="chip ${m.status === "envoyé" ? "ok" : "visit"}">${m.status === "envoyé" ? "Envoyé" : "Brouillon"}</span></div>
       ${ui.editMsg === m.id
         ? `<input class="field" id="m-subj" value="${esc(m.subject)}" aria-label="Objet"><textarea id="m-body">${esc(m.body)}</textarea><div class="toolbar"><button class="mini" data-msave="${m.id}">Enregistrer</button></div>`
         : `${m.subject ? `<div class="subj">${esc(m.subject)}</div>` : ""}<div class="body">${esc(m.body)}</div>
-           <div class="dmeta">À : ${esc(d.client.email || d.client.phone || "adresse à compléter")} ${d.quote.lines.length && m.kind.includes("devis") ? `· pièce jointe : devis-${qno(d)}.pdf` : ""}</div>
+           <div class="dmeta">À : ${esc(d.client.email || d.client.phone || "adresse à compléter")} ${d.invoice && /facture|paiement/i.test(m.kind) ? `· pièce jointe : facture-${esc(d.invoice.no)}.pdf` : d.quote.lines.length && m.kind.includes("devis") ? `· pièce jointe : devis-${qno(d)}.pdf` : ""}</div>
            ${m.status !== "envoyé" ? `<div class="toolbar send-row">${sendLinks(d, m)}</div>` : ""}
            <div class="toolbar"><button class="mini" data-mcopy="${m.id}">Copier le texte</button><button class="mini" data-medit="${m.id}">Modifier</button><button class="mini" data-mdel="${m.id}">Supprimer</button></div>
            ${m.status !== "envoyé" ? `<button class="btn primary" data-msent="${m.id}">C'est envoyé ✓</button>` : ""}`}
@@ -1539,7 +1718,7 @@ function viewSettings() {
         <label class="lab">Devis rangé par<input class="field" id="s-part" value="${esc(S.partLabel || "Pièce")}" placeholder="Pièce, zone, étage…"></label></div>
       <label class="lab">Adresse<input class="field" id="s-address" data-co="address" value="${esc(c.address)}"></label>
       <div class="grid2"><label class="lab">Téléphone<input class="field" id="s-phone" data-co="phone" value="${esc(c.phone)}"></label><label class="lab">Email<input class="field" id="s-email" data-co="email" value="${esc(c.email)}"></label></div>
-      <div class="grid2"><label class="lab">N° IDE<input class="field" id="s-ide" data-co="ide" value="${esc(c.ide)}"></label><label class="lab">IBAN (facultatif)<input class="field" id="s-iban" data-co="iban" value="${esc(c.iban || "")}" placeholder="CH.."></label></div>
+      <div class="grid2"><label class="lab">N° IDE<input class="field" id="s-ide" data-co="ide" value="${esc(c.ide)}"></label><label class="lab">IBAN (pour le QR des factures)<input class="field" id="s-iban" data-co="iban" value="${esc(c.iban || "")}" placeholder="CH.."></label></div>
       <div class="grid2"><label class="lab">TVA<select id="s-vat"><option value="1" ${S.vat.liable ? "selected" : ""}>Assujetti</option><option value="0" ${!S.vat.liable ? "selected" : ""}>Non assujetti</option></select></label>
         <label class="lab">Taux (%)<input class="field" id="s-rate" inputmode="decimal" value="${S.vat.rate}" ${S.vat.liable ? "" : "disabled"}></label></div>`)}
     ${blk("prix", "Mes prestations et prix", nCat ? `${nCat} prestation${nCat > 1 ? "s" : ""}` : "Aucune pour l'instant", `
@@ -1573,7 +1752,9 @@ function viewSettings() {
       <label class="lab">Conditions de paiement<input class="field" id="s-pay" data-def="payment" value="${esc(S.defaults.payment)}"></label>
       <label class="lab">Tarif en régie, CHF par heure (facultatif)<input class="field" id="s-regie" data-co="regie" inputmode="decimal" value="${esc(c.regie || "")}" placeholder="Ex. 75"></label>
       <label class="lab">Remarque type sur les devis<textarea id="s-notes" data-def="notes">${esc(S.defaults.notes)}</textarea></label>
-      <label class="lab">Proposer une relance après (jours)<input class="field" id="s-rel" data-def="relanceDays" inputmode="numeric" value="${S.defaults.relanceDays}"></label>`)}
+      <label class="lab">Proposer une relance après (jours)<input class="field" id="s-rel" data-def="relanceDays" inputmode="numeric" value="${S.defaults.relanceDays}"></label>
+      <div class="grid2"><label class="lab">Factures : délai de paiement (jours)<input class="field" id="s-paydays" data-def="payDays" inputmode="numeric" value="${payDays()}"></label>
+        <label class="lab">Rappel de paiement après (jours de retard)<input class="field" id="s-rappel" data-def="rappelDays" inputmode="numeric" value="${rappelDays()}"></label></div>`)}
     ${blk("messages", "Mes messages aux clients", S.email.address === "tu" ? "Tutoyer" : "Vouvoyer", `
       <label class="lab">Avec les clients<select id="s-addr"><option value="vous" ${S.email.address === "vous" ? "selected" : ""}>Vouvoyer</option><option value="tu" ${S.email.address === "tu" ? "selected" : ""}>Tutoyer</option></select></label>
       <label class="lab">Signature<textarea id="s-sig">${esc(S.email.signature)}</textarea></label>`)}
@@ -1957,7 +2138,8 @@ function bind() {
     render(); const t = document.getElementById("ask"); if (t) { t.placeholder = "Ajoute un mot sur ces photos, ou envoie directement"; t.focus(); }
   };
   bindChoices();
-  all("[data-open]", b => b.onclick = () => openDossier(b.dataset.open));
+  all("[data-open]", b => b.onclick = () => openDossier(b.dataset.open, b.dataset.odtab));
+  on("go-factures", () => { ui.filter = "factures"; go("dossiers"); });
   all("[data-filter]", b => b.onclick = () => { ui.filter = b.dataset.filter; render(); });
   on("back", () => go("dossiers"));
   all("[data-dtab]", b => b.onclick = () => { ui.dtab = b.dataset.dtab; ui.editMsg = null; render(); });
@@ -1980,6 +2162,7 @@ function bind() {
     qi("q-disc", v => d.quote.discount = Math.max(0, Math.min(50, num(v)))); qi("q-ptype", v => d.quote.priceType = v); qi("q-valid", v => d.quote.validityDays = num(v) || null); qi("q-notes", v => d.quote.notes = v); qi("q-period", v => d.quote.period = v);
     on("pdf", () => makePdf(d));
     if (ui.dtab === "pdf") showPdfPreview(d);
+    if (ui.dtab === "fpdf") { if (d.invoice) showPdfPreview(d, "facture"); else { ui.dtab = "facture"; render(); return; } }
     on("mark-sent", () => { d.status = "envoye"; d.sentAt = Date.now(); act(d, "Devis marqué comme envoyé. Relance proposée dans " + S.defaults.relanceDays + " jours."); save(); render(); toast("Statut : devis envoyé"); });
     on("mark-accepted", () => { d.status = "accepte"; act(d, "Devis accepté"); save(); render(); });
     on("mark-refused", () => { d.status = "refuse"; act(d, "Devis refusé"); save(); render(); });
@@ -1998,9 +2181,25 @@ function bind() {
     all("[data-medit]", b => b.onclick = () => { ui.editMsg = b.dataset.medit; render(); });
     all("[data-msave]", b => b.onclick = () => { const m = d.messages.find(x => x.id === b.dataset.msave); m.subject = $("#m-subj").value; m.body = $("#m-body").value; ui.editMsg = null; save(); render(); });
     all("[data-msent]", b => b.onclick = () => { const m = d.messages.find(x => x.id === b.dataset.msent); m.status = "envoyé";
-      if (m.kind.toLowerCase().includes("envoi") && ["nouveau", "visite", "chiffrage"].includes(d.status)) { d.status = "envoye"; d.sentAt = Date.now(); }
+      if (d.invoice && m.kind === "Envoi de la facture") { if (!d.invoice.sentAt) { d.invoice.sentAt = Date.now(); act(d, `Facture ${d.invoice.no} envoyée. Paiement attendu jusqu'au ${fmtDate(invDue(d))}.`); } }
+      else if (d.invoice && m.kind === "Rappel de paiement") { (d.invoice.reminders = d.invoice.reminders || []).push(Date.now()); if (!d.invoice.sentAt) d.invoice.sentAt = Date.now(); act(d, `Rappel de paiement envoyé pour la facture ${d.invoice.no}.`); }
+      else if (m.kind.toLowerCase().includes("envoi") && ["nouveau", "visite", "chiffrage"].includes(d.status)) { d.status = "envoye"; d.sentAt = Date.now(); }
       if (m.kind.toLowerCase().includes("relance")) d.sentAt = Date.now(); save(); render(); toast("Marqué comme envoyé"); });
     all("[data-mpdf]", b => b.onclick = () => makePdf(d));
+    all("[data-mfpdf]", b => b.onclick = () => makePdf(d, "facture"));
+    // Facture
+    const invMsg = (kind) => { invoiceMessage(d, kind); ui.dtab = "messages"; save(); render(); toast(kind === "rappel" ? "Rappel prêt : relis et envoie" : "Message prêt : relis et envoie"); };
+    on("inv-create", () => { createInvoice(d); save(); render(); toast("Facture créée"); });
+    on("inv-msg", () => invMsg("envoi")); on("inv-rappel", () => invMsg("rappel")); on("ns-rappel", () => invMsg("rappel"));
+    on("inv-sent", () => { d.invoice.sentAt = Date.now(); act(d, `Facture ${d.invoice.no} envoyée. Paiement attendu jusqu'au ${fmtDate(invDue(d))}.`); save(); render(); toast("Facture envoyée : je surveille l'échéance"); });
+    on("inv-paid", () => { d.invoice.paidAt = Date.now(); act(d, `Facture ${d.invoice.no} payée.`); save(); render(); toast("Facture payée", () => { d.invoice.paidAt = null; save(); render(); }); });
+    on("inv-unpaid", () => { d.invoice.paidAt = null; save(); render(); });
+    on("inv-pdf", () => makePdf(d, "facture"));
+    on("inv-sync", () => { d.invoice.lines = clone(d.quote.lines); d.invoice.discount = num(d.quote.discount); save(); render(); toast("Facture mise à jour avec le devis"); });
+    on("inv-del", () => { const old = d.invoice; delete d.invoice; ui.dtab = "devis"; save(); render(); toast("Facture supprimée", () => { d.invoice = old; save(); render(); }); });
+    const ii = (id, fn) => { const el = document.getElementById(id); if (el) el.onchange = () => { fn(el.value); save(); render(); }; };
+    ii("inv-no", v => { if (v.trim()) d.invoice.no = v.trim().slice(0, 20); }); ii("inv-days", v => d.invoice.days = Math.max(0, Math.round(num(v))));
+    ii("inv-date", v => { const x = new Date(v + "T12:00:00"); if (!isNaN(x)) d.invoice.date = x.getTime(); }); ii("inv-done", v => d.invoice.done = v);
     all("[data-mdel]", b => b.onclick = () => { d.messages = d.messages.filter(x => x.id !== b.dataset.mdel); save(); render(); });
   }
   // Settings
@@ -2010,7 +2209,7 @@ function bind() {
     if (!ui.tplConfirm) { ui.tplConfirm = k; const bt = document.getElementById("tpl-apply"); bt.textContent = "Confirmer ?"; return; }
     S.catalogue = clone(t.catalogue); S.company.trade = t.name; S.partLabel = t.part; if (t.aiNotes && !S.aiNotes.includes(t.aiNotes)) S.aiNotes = (S.aiNotes ? S.aiNotes + "\n" : "") + t.aiNotes;
     ui.tplConfirm = null; save(); render(); toast(`Modèle ${t.name} chargé : adapte les prix à les tiens.`); });
-  all("[data-def]", inp => inp.oninput = () => { S.defaults[inp.dataset.def] = ["validityDays", "relanceDays"].includes(inp.dataset.def) ? num(inp.value) : inp.value; save(); });
+  all("[data-def]", inp => inp.oninput = () => { S.defaults[inp.dataset.def] = ["validityDays", "relanceDays", "payDays", "rappelDays"].includes(inp.dataset.def) ? num(inp.value) : inp.value; save(); });
   const sel = (id, fn) => { const el = document.getElementById(id); if (el) el.onchange = el.oninput = () => { fn(el.value); save(); }; };
   sel("s-vat", v => { S.vat.liable = v === "1"; render(); }); sel("s-rate", v => S.vat.rate = num(v)); sel("s-ptype", v => S.defaults.priceType = v);
   sel("s-addr", v => S.email.address = v); sel("s-sig", v => S.email.signature = v); sel("s-ai", v => S.aiNotes = v);

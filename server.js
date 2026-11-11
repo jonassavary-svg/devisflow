@@ -5,6 +5,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 
@@ -245,6 +246,43 @@ const server = http.createServer(async (req, res) => {
     return send(res, e.message === "too_large" ? 413 : 400, { error: msg });
   }
 });
+
+// ---------- Rappels de paiement : notification sur le Mac ----------
+// Quand une facture envoyée n'est pas payée et que le jour du rappel est arrivé, le Mac affiche une notification,
+// même si la page DevisFlow est fermée. Une seule notification par rappel. Mêmes règles que dans l'app (invState).
+const NOTIF_FILE = path.join(DATA_DIR, "notifications.json");
+const DAY_MS = 86400000;
+const dayStart = (ts) => { const x = new Date(ts); x.setHours(0, 0, 0, 0); return x.getTime(); };
+function remindersDue(data, now = Date.now()) {
+  const def = (data && data.settings && data.settings.defaults) || {};
+  const grace = def.rappelDays === undefined || def.rappelDays === "" ? 5 : Math.max(0, Number(def.rappelDays) || 0);
+  const out = [];
+  for (const d of (data && data.dossiers) || []) {
+    const i = d.invoice; if (!i || !i.sentAt || i.paidAt) continue;
+    const due = dayStart(i.date) + (Number(i.days) || 0) * DAY_MS, n = (i.reminders || []).length;
+    const remindAt = n ? dayStart(i.reminders[n - 1]) + 10 * DAY_MS : due + (grace + 1) * DAY_MS;
+    if (now >= remindAt) out.push({ key: `${d.id}:${i.no}:${n}`, no: i.no, client: (d.client && d.client.name) || "client", late: Math.floor((now - due) / DAY_MS), n });
+  }
+  return out;
+}
+function notify(title, text) {
+  if (process.env.DEVISFLOW_NOTIFY_FILE) { try { fs.appendFileSync(process.env.DEVISFLOW_NOTIFY_FILE, title + " | " + text + "\n"); } catch {} return; }
+  if (process.platform !== "darwin") return;
+  const q = (x) => '"' + String(x).replace(/[\\"]/g, "").replace(/[\r\n]+/g, " ") + '"';
+  execFile("osascript", ["-e", `display notification ${q(text)} with title ${q(title)} sound name "Glass"`], () => {});
+}
+function checkReminders() {
+  try {
+    const h = new Date().getHours(); if (!process.env.DEVISFLOW_NOTIFY_FILE && (h < 8 || h >= 19)) return; // pas la nuit
+    let seen = {}; try { seen = JSON.parse(fs.readFileSync(NOTIF_FILE, "utf8")); } catch {}
+    const due = remindersDue(readData()).filter(x => !seen[x.key]); if (!due.length) return;
+    for (const x of due) { seen[x.key] = Date.now(); notify("DevisFlow : rappel de paiement", `Facture ${x.no} (${x.client}) : ${x.late} jour${x.late > 1 ? "s" : ""} de retard. ${x.n ? "Envoie le " + (x.n + 1) + "e rappel." : "Envoie un rappel."}`); }
+    fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(NOTIF_FILE, JSON.stringify(seen));
+  } catch (e) { console.error("[rappels]", e.message); }
+}
+const NOTIFY_EVERY = Number(process.env.DEVISFLOW_NOTIFY_SECONDS || 1800) * 1000;
+setTimeout(checkReminders, Math.min(20000, NOTIFY_EVERY)).unref();
+setInterval(checkReminders, NOTIFY_EVERY).unref();
 
 server.listen(PORT, HOST, () => {
   console.log(`\nDevisFlow est lancé : http://localhost:${PORT}`);

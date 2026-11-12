@@ -8,7 +8,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms)); const ok = (c, t) => 
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true }); const p = await ctx.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://localhost:3105/?tests'); await sleep(800);
-  ok(await p.locator('#tabs button').count() === 4, '4 onglets');
+  ok(await p.locator('#tabs button').count() === 5, '5 onglets');
   // Garder en note depuis l'accueil (sans IA)
   await p.click('#start-msg'); await p.click('[data-src="moi"]'); await p.fill('#ask', 'M. Gérard à Givisiez, salon murs 30 m², préparation et peinture, appeler le 079 111 22 33'); await p.click('#dest-note'); await sleep(2000);
   let notes = await p.evaluate(() => N.map(n => ({ t: n.title, x: n.text })));

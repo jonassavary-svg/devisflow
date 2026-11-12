@@ -61,7 +61,7 @@ function start(env, port) {
   await p.click('#as-test'); await sleep(600);
   // Tests de l'IA
   await p.evaluate(() => go('settings')); await sleep(500); await p.evaluate(() => document.querySelectorAll('details.blk').forEach(x => x.open = true)); await sleep(200);
-  ok(await p.locator('#eval-panel .test-row').count() === 44, 'tests listés : ' + await p.locator('#eval-panel .test-row').count());
+  ok(await p.locator('#eval-panel .test-row').count() === 51, 'tests listés : ' + await p.locator('#eval-panel .test-row').count());
   await p.click('#run-tests'); await sleep(9000);
   const res = await p.evaluate(() => Object.fromEntries(Object.entries(ui.evalResults || {}).map(([k, v]) => [k, v.ok])));
   console.log('   résultats', JSON.stringify(res));
@@ -72,7 +72,7 @@ function start(env, port) {
   data = JSON.parse(fs.readFileSync('data1/devisflow.json'));
   ok(data.settings.catalogue.length === 9 && data.settings.aiNotes.startsWith('On ne travaille'), 'paramètres réels intacts après les tests');
   ok(!data.dossiers.some(d => String(d.id).startsWith('test-')), 'aucun dossier de test enregistré');
-  ok(data.settings.lastEval && data.settings.lastEval.total === 44, 'résumé des tests enregistré');
+  ok(data.settings.lastEval && data.settings.lastEval.total === 51, 'résumé des tests enregistré');
   await p.screenshot({ path: 'settings.png', fullPage: true });
   // Import ancien devis (photo)
   await p.setInputFiles('#oldquote-in', require('path').join(__dirname, '..', '..', 'public/icon-180.png')); await sleep(1500);

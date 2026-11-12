@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('durée de la série', ((Date.now() - t0) / 1000).toFixed(1), 's');
   const res = await p.evaluate(() => Object.fromEntries(Object.entries(ui.evalResults).map(([k, v]) => [k, v.ok ? 'OK' : v.checks.filter(c => !c.ok).map(c => c.text).join(' | ')])));
   console.log(res);
-  const bad = Object.entries(res).filter(([k, v]) => v !== 'OK'); console.log((bad.length || Object.keys(res).length < 43 ? 'FAIL ' : 'PASS ') + 'fausse IA parfaite : ' + (Object.keys(res).length - bad.length) + '/' + Object.keys(res).length + ' tests intégrés réussis');
+  const bad = Object.entries(res).filter(([k, v]) => v !== 'OK'); console.log((bad.length || Object.keys(res).length < 50 ? 'FAIL ' : 'PASS ') + 'fausse IA parfaite : ' + (Object.keys(res).length - bad.length) + '/' + Object.keys(res).length + ' tests intégrés réussis');
   const reqs = fs.readFileSync('oracle.jsonl', 'utf8').trim().split('\n').map(JSON.parse);
   console.log('effort low (rapide/Claude):', reqs.every(r => r.output_config.effort === 'low'));
   const sys = reqs[0].system[0].text; console.log('infos entreprise:', /IDE CHE-000/.test(sys), /validité des devis 30 jours/.test(sys), /CATALOGUE/.test(sys));

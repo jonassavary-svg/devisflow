@@ -98,6 +98,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chip.visit { background: var(--tape-soft); color: var(--tape-ink); }
 .chip.sent { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
 .chip.ok { background: var(--ok-soft); color: var(--ok); }
+.ask-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 12px 14px; cursor: pointer; color: var(--ink); font-family: var(--body); }
+.ask-row svg { width: 22px; height: 22px; flex: none; stroke: var(--accent); fill: none; stroke-width: 1.8; }
+.ask-row b { display: block; font-size: 14px; }
+.ask-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .chip.late { background: #FBE9E7; color: #C0392B; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 
@@ -548,8 +552,14 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 let S = Object.assign(clone(DEFAULT_SETTINGS), load("df5-settings", DEFAULT_SETTINGS));
 let D = load("df5-dossiers", SEED);
 let N = (SERVER_DATA && Array.isArray(SERVER_DATA.notes)) ? SERVER_DATA.notes : (() => { try { const b = JSON.parse(localStorage.getItem("df-backup")); if (b && Array.isArray(b.notes)) return b.notes; } catch (e) {} return []; })();
+// Dates utiles aux chiffres du mois : premier envoi du devis, jour de l'acceptation. 0 = date inconnue (dossier plus ancien).
+function stampStatus(d) {
+  if (d.status === "accepte") { if (d.acceptedAt === undefined) d.acceptedAt = Date.now(); } else if (d.acceptedAt !== undefined) delete d.acceptedAt;
+  if (["envoye", "accepte", "refuse"].includes(d.status) && d.sentAt && d.firstSentAt === undefined) d.firstSentAt = d.sentAt;
+}
+D.forEach(d => { if (d.status === "accepte" && d.acceptedAt === undefined) d.acceptedAt = 0; if (d.sentAt && d.firstSentAt === undefined) d.firstSentAt = d.sentAt; });
 let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(pushSave, 400); }
+function save() { D.forEach(stampStatus); clearTimeout(saveT); saveT = setTimeout(pushSave, 400); }
 async function pushSave() {
   saveT = null;
   if (ui.evalRunning) { saveT = setTimeout(pushSave, 1000); return; } // pendant les tests, S est une copie temporaire
@@ -941,6 +951,74 @@ function makeTools(target, isHome, convo = null) {
   );
   return tools;
 }
+// Vue d'ensemble de l'entreprise donnée à l'IA : les comptes et les totaux sont calculés ici, jamais par l'IA.
+function overviewForAgent() {
+  const t = Date.now(), m0 = new Date(t); m0.setDate(1); m0.setHours(0, 0, 0, 0); const ms = m0.getTime();
+  const sentTs = (d) => d.firstSentAt || d.sentAt || 0, relDays = num(S.defaults.relanceDays) || 5;
+  const quoteSent = D.filter(d => ["envoye", "accepte", "refuse"].includes(d.status) && sentTs(d) >= ms);
+  const waiting = D.filter(d => d.status === "envoye");
+  const toRelance = waiting.filter(d => d.sentAt && t >= d.sentAt + relDays * DAY);
+  const inv = D.filter(d => d.invoice), sentUnpaid = inv.filter(d => d.invoice.sentAt && !d.invoice.paidAt);
+  const sum = (a, f) => Math.round(a.reduce((x, d) => x + f(d), 0) * 100) / 100, name = (d) => d.client.name;
+  const summary = {
+    quotes_sent_this_month: quoteSent.length,
+    quotes_accepted_this_month: D.filter(d => d.status === "accepte" && d.acceptedAt >= ms && d.acceptedAt > 0).length,
+    quotes_accepted_with_unknown_date: D.filter(d => d.status === "accepte" && d.acceptedAt === 0).length,
+    quotes_waiting_for_answer: { count: waiting.length, total_chf: sum(waiting, d => totals(d).tot) },
+    quotes_to_relance_now: toRelance.map(name),
+    accepted_without_invoice: D.filter(d => d.status === "accepte" && !d.invoice).map(name),
+    invoices_to_send: inv.filter(d => !d.invoice.sentAt && !d.invoice.paidAt).map(name),
+    invoices_to_cash: { count: sentUnpaid.length, total_chf: sum(sentUnpaid, d => invTotals(d).tot) },
+    invoices_late: sentUnpaid.filter(d => ["retard", "rappel"].includes(invState(d).k)).map(name),
+    payment_reminders_to_send_now: sentUnpaid.filter(d => invState(d).k === "rappel").map(name),
+    invoiced_this_month_chf: sum(inv.filter(d => d.invoice.date >= ms), d => invTotals(d).tot),
+    paid_this_month_chf: sum(inv.filter(d => d.invoice.paidAt >= ms), d => invTotals(d).tot),
+    dossiers_total: D.length
+  };
+  const row = (d) => { const o = { dossier_id: d.id, client: d.client.name, place: d.client.place || undefined, title: d.title, status: (STATUS[d.status] || {}).label || d.status };
+    if (d.quote.lines.length) o.quote_total_chf = totals(d).tot;
+    if (d.status === "envoye" && d.sentAt) { o.quote_last_sent_or_relance_on = fmtDate(d.sentAt); o.days_since = Math.floor((t - d.sentAt) / DAY); o.to_relance = t >= d.sentAt + relDays * DAY; }
+    if (d.visit) o.visit = d.visit;
+    if (d.invoice) { const st = invState(d); o.invoice = { no: d.invoice.no, total_chf: invTotals(d).tot, state: st.label, detail: st.t, sent_on: d.invoice.sentAt ? fmtDate(d.invoice.sentAt) : null, due_on: fmtDate(invDue(d)), paid_on: d.invoice.paidAt ? fmtDate(d.invoice.paidAt) : null, reminders_sent: (d.invoice.reminders || []).length }; }
+    return o; };
+  const rank = (d) => d.invoice && !d.invoice.paidAt ? 0 : d.status === "envoye" ? 1 : ["chiffrage", "visite", "nouveau"].includes(d.status) ? 2 : d.status === "accepte" ? 3 : 4;
+  const sorted = D.slice().sort((a, b) => rank(a) - rank(b) || (b.created || 0) - (a.created || 0)), shown = sorted.slice(0, 60);
+  return { today: dayText(t), summary, dossiers: shown.map(row), dossiers_not_shown: sorted.length - shown.length };
+}
+// Factures par la parole : create_invoice, mark_invoice_sent, mark_invoice_paid, prepare_invoice_message.
+// pick(i) trouve le dossier (le dossier ouvert, ou dossier_id depuis l'accueil). L'IA n'envoie rien.
+function invoiceTools(pick, log) {
+  const find = (i) => { const d = pick(i); if (!d) throw new Error("Unknown dossier: use dossier_id from the overview."); return d; };
+  const withInv = (i) => { const d = find(i); if (!d.invoice) throw new Error("This dossier has no invoice yet."); return d; };
+  const info = (d) => ({ ok: true, client: d.client.name, invoice_no: d.invoice.no, total_chf: invTotals(d).tot, state: invState(d).t, due_on: fmtDate(invDue(d)) });
+  const idp = { dossier_id: { type: "string", description: "Dossier id (needed from the home screen; ignored when a dossier is open)." } };
+  return [
+    { name: "create_invoice", description: "Creates the invoice of a dossier as a copy of its current quote. Only when the artisan asks for it (« fais la facture »). Refused if an invoice exists or if quote lines miss a quantity or price.",
+      inputSchema: { type: "object", properties: idp },
+      execute: (i) => { const d = find(i); if (d.invoice) throw new Error(`Invoice ${d.invoice.no} already exists for this dossier.`);
+        if (!d.quote.lines.length) throw new Error("The quote has no lines: nothing to invoice.");
+        if (d.quote.lines.some(l => l.qty === "" || !num(l.price))) throw new Error("Some quote lines have no quantity or no price: ask the artisan to complete them first.");
+        createInvoice(d); save(); refresh(); const q = qrBill(d); log(d, `Facture ${d.invoice.no} créée (CHF ${chf(invTotals(d).tot)}).`); return Object.assign(info(d), { qr_payment_slip: q.problems ? "not possible, missing: " + q.problems.join("; ") : "included" }); } },
+    { name: "mark_invoice_sent", description: "Records that the artisan sent the invoice to the client. Only when he says he sent it. Starts the payment due-date tracking.",
+      inputSchema: { type: "object", properties: idp },
+      execute: (i) => { const d = withInv(i); if (d.invoice.paidAt) throw new Error("Invoice already paid."); if (!d.invoice.sentAt) d.invoice.sentAt = Date.now(); save(); refresh(); log(d, `Facture ${d.invoice.no} marquée envoyée.`); return info(d); } },
+    { name: "mark_invoice_paid", description: "Records that the client paid the invoice. Only when the artisan says the payment was received. Never guess.",
+      inputSchema: { type: "object", properties: idp },
+      execute: (i) => { const d = withInv(i); if (!d.invoice.paidAt) d.invoice.paidAt = Date.now(); save(); refresh(); log(d, `Facture ${d.invoice.no} marquée payée.`); return info(d); } },
+    { name: "prepare_invoice_message", description: "Saves a draft message for the invoice: kind 'envoi' (sending the invoice) or 'rappel' (payment reminder, polite first, firmer from the 2nd). The artisan reads and sends it himself.",
+      inputSchema: { type: "object", properties: Object.assign({ kind: { type: "string", enum: ["envoi", "rappel"] } }, idp), required: ["kind"] },
+      execute: (i) => { const d = withInv(i); if (d.invoice.paidAt) throw new Error("Invoice already paid."); const k = i.kind === "rappel" ? "rappel" : "envoi";
+        if (k === "rappel" && !d.invoice.sentAt) throw new Error("The invoice was not sent yet: a reminder makes no sense."); invoiceMessage(d, k); save(); refresh(); log(d, `Brouillon préparé : ${d.messages[0].kind} (onglet Messages).`); return Object.assign(info(d), { draft: d.messages[0].subject }); } }
+  ];
+}
+// Outils de l'assistant depuis l'accueil : lecture d'un dossier, factures, boutons de réponse. Pas de création ni de modification de devis.
+function askTools() {
+  const byId = (i) => dossier(String(i.dossier_id || ""));
+  const log = (d, text) => { act(d, text); ui.homeChat.push({ role: "action", text: `${text} (${d.client.name})` }); };
+  const choices = makeTools(() => null, true).find(t => t.name === "propose_choices");
+  return [{ name: "read_dossier", description: "Full detail of one dossier by dossier_id: client, facts, quote lines, totals, messages, invoice.", inputSchema: { type: "object", properties: { dossier_id: { type: "string" } }, required: ["dossier_id"] },
+    execute: (i) => { const d = byId(i); if (!d) throw new Error("Unknown dossier_id."); return dossierForAgent(d); } }, ...invoiceTools(byId, log), choices];
+}
 const RULES = `Tu es l'assistant DevisFlow d'une entreprise suisse qui fait des devis (son métier est indiqué plus bas : peinture, électricité, menuiserie, nettoyage, jardin ou autre). Le patron, appelé ici « l'artisan », t'envoie comme à un collègue des messages de clients collés (WhatsApp, SMS, email), des résumés d'appels, des notes de visite dictées (fautes de transcription possibles), des photos ou des instructions. Tu tiens ses dossiers, ses devis et ses brouillons de messages avec tes outils. Tu raisonnes comme un professionnel expérimenté de SON métier, mais tu ne chiffres qu'avec SON catalogue.
 Règles strictes :
 - Tu tutoies TOUJOURS l'artisan (c'est ton patron), même pour poser une question : « Veux-tu que je propose… ? », jamais « Voulez-vous… ? ». Aucun « vous » dans tes réponses à l'artisan. Tu vouvoies ou tutoies ses clients selon le réglage de l'entreprise.
@@ -959,6 +1037,7 @@ Règles strictes :
 - Chiffrage : utilise un item_id dès qu'une prestation correspond. La note d'un article est une règle à respecter (ex. « 2 couches incluses » : ne multiplie pas ; « compris jusqu'à 5 m » : ne compte que le surplus ; « une fois par chantier » : quantité 1). N'invente jamais de prix ni de quantité ; si une quantité manque, ajoute la ligne sans qty et demande-la. Le logiciel calcule les montants.
 - Prestation absente du catalogue : ajoute-la comme ligne libre SANS prix (sauf si l'artisan donne le prix) et demande-lui son prix. « Tarif habituel » sans article : demande le prix. Si la demande ne relève pas de son métier, dis-le simplement.
 - Unités : la quantité doit être dans l'unité de l'article (m², m, pce, h, forfait). Ne convertis jamais une mesure en une autre sans base claire : surface au sol ≠ surface des murs, nombre de pièces d'un logement ≠ m², longueur ≠ surface. Si l'unité ne colle pas à la mesure donnée, demande.
+- Factures : create_invoice seulement si l'artisan le demande (« fais la facture »), mark_invoice_sent seulement s'il dit l'avoir envoyée, mark_invoice_paid seulement s'il dit que le client a payé (jamais par déduction), prepare_invoice_message pour le message d'envoi ou le rappel de paiement quand il le demande. Tu n'envoies rien. Les montants et les échéances viennent de l'état du dossier, ne les recalcule pas.
 - Corrections (« 45, non pardon, 54 ») : garde la dernière valeur, update_line si la ligne existe. Quand une mesure change, mets à jour toutes les lignes qui en dépendent (ex. préparation ET peinture des mêmes murs ; note « même quantité que »).
 - Parties du devis (champ room) : regroupe les lignes par partie, du type indiqué plus bas (pièce, zone, étage, poste…), avec un nom clair (Salon, Chambre 1 / Jardin avant / Garage…). « Pareil », « idem » = même mesure que la partie précédente. Deux parties identiques : une ligne par partie, jamais de doublon dans la même partie. Les forfaits « une fois par chantier » vont dans la partie « Général » avec quantité 1.
 - Avant de répondre, relis le devis : chaque mesure dictée doit être utilisée une fois, avec la bonne unité. Références comme « la dernière ligne » : utilise get_dossier.
@@ -992,9 +1071,12 @@ function historyFor(chat, maxChars = 14000) {
 async function runAgent(history, d, isHome, images, how = {}) {
   const prevBot = [...history].reverse().find(m => m.role === "assistant");
   const convo = { user: String(history[history.length - 1].content || "").replace(/^\(.*?\)\n/gm, ""), prevBot: prevBot ? String(prevBot.content) : "" };
-  let tools = makeTools(() => isHome ? dossier(ui.target) : d, isHome, convo);
+  let tools = how.ask ? askTools() : makeTools(() => isHome ? dossier(ui.target) : d, isHome, convo);
   if (how.dossier) tools = tools.filter(t => t.name !== "save_note");
-  const ctx = isHome
+  if (!isHome) tools.push(...invoiceTools(() => d, (dd, text) => act(dd, text)));
+  const ctx = how.ask
+    ? `\n\nCONTEXTE : l'artisan te parle depuis l'accueil : c'est une QUESTION ou un ORDRE sur son entreprise, pas un message de client. Ne crée aucun dossier. Voici la VUE D'ENSEMBLE à jour de l'entreprise, calculée par le logiciel (c'est la vérité) :\n${JSON.stringify(overviewForAgent())}\n\nRéponds seulement avec ces données : les comptes et les totaux sont déjà calculés, ne les recalcule pas et n'invente rien. Si l'information n'y est pas (ou si « dossiers_not_shown » > 0 et que tu cherches un client absent de la liste), dis-le ou utilise read_dossier. Tu peux agir sur les factures (create_invoice, mark_invoice_sent, mark_invoice_paid, prepare_invoice_message avec dossier_id) mais seulement sur demande claire de l'artisan. Si plusieurs dossiers correspondent à un nom, demande lequel avant d'agir. Pour créer un dossier ou changer un devis, dis à l'artisan d'ouvrir le dossier ou d'utiliser Dicter / Message. Réponse courte : pas de liste à puces, pas de markdown, noms des clients et montants en CHF.`
+    : isHome
     ? `\n\nCONTEXTE : message reçu sur l'accueil. Identifie le dossier : compare le nom, le téléphone, l'email et le lieu avec les DOSSIERS EXISTANTS (orthographe ou numéro écrit autrement = même client). Même client : open_dossier. Sinon : create_dossier. Puis traite la demande. ${how.dossier ? "L'artisan a choisi d'en faire un DOSSIER : crée-le ou complète le dossier existant, même s'il manque des infos (nom inconnu : client_name « Client à préciser », puis demande le nom)." : "Si l'artisan demande une note ou un rappel pour plus tard, ou si aucun client n'est identifiable, utilise save_note au lieu de créer un dossier."} Une note de l'artisan qui décrit une visite avec des mesures : crée le dossier ET remplis le devis.\nDOSSIERS EXISTANTS : ${JSON.stringify(D.map(x => ({ dossier_id: x.id, client: x.client.name, place: x.client.place, address: x.client.address || undefined, phone: x.client.phone || undefined, email: x.client.email || undefined, title: x.title, status: x.status, created_on: dayText(x.created) })))}`
     : `\n\nDOSSIER OUVERT (état actuel, à jour) : ${JSON.stringify(dossierForAgent(d))}${checkQuote(d).length ? `\nCONTRÔLE AUTOMATIQUE DU DEVIS, points à régler ou à signaler : ${checkQuote(d).join(" ; ")}` : ""}`;
   history[history.length - 1].content = `DATE ET HEURE : ${nowText()}\n` + ctx.trim()
@@ -1014,14 +1096,16 @@ async function ask(d, override, opts = {}) {
   if (ui.pasteMode && !text.startsWith("[")) text = "[Message de client collé]\n" + text;
   ui.autoSend = false; ui.pasteMode = false; ui.choices = []; ui.draft = ""; if (ta) ta.value = "";
   const isHome = !d;
+  if (isHome && ui.homeMode === "ask" && !opts.dossier) opts = Object.assign({}, opts, { ask: true });
   const chat = isHome ? ui.homeChat : d.chat;
   ui.pendingUrls.forEach(u => chat.push({ role: "photo", url: u }));
   chat.push({ role: "user", text });
   ui.thinking = true; ui.target = null; ui.savedNote = null; refresh();
+  const actBefore = ui.homeChat.filter(m => m.role === "action").length;
   let reply;
   if (sample) {
     reply = await runAgent(historyFor(chat), d, isHome, images, opts);
-  } else reply = offlineAgent(d, text, isHome);
+  } else reply = opts.ask ? "Assistant IA non activé : ajoute ta clé API dans le fichier .env pour pouvoir me parler (voir LISEZMOI.md)." : offlineAgent(d, text, isHome);
   ui.thinking = false; ui.pendingImages = []; ui.pendingUrls = [];
   if (isHome) {
     const t = dossier(ui.target);
@@ -1036,6 +1120,7 @@ async function ask(d, override, opts = {}) {
     if (ui.savedNote) { ui.savedNote = null; toast("Enregistré dans tes notes"); }
   } else d.chat.push({ role: "assistant", text: reply || "C'est noté." });
   save(); refresh(); speak(reply);
+  if (isHome && opts.ask && ui.homeChat.filter(m => m.role === "action").length > actBefore) render(); // l'accueil (à faire, totaux) suit les actions de l'IA
 }
 function speak(t) { if (tts && ui.speak && t) tts.speak(t.slice(0, 1900)).catch(() => {}); }
 function offlineAgent(d, text, isHome) {
@@ -1194,11 +1279,13 @@ function composer(placeholder) {
 }
 function refresh() {
   if (ui.evalRunning) return;
+  renderTabs(); // le point rouge des onglets suit les changements faits par l'IA
+  const ideas = document.getElementById("ask-ideas"); if (ideas && ui.homeChat.length) ideas.remove();
   const c = document.getElementById("chat");
   if (c) { c.innerHTML = chatHtml(ui.mode === "client" ? ui.client.chat : ui.dossierId ? cur().chat : ui.homeChat); bindChoices(); }
   const sb = document.getElementById("send-ask"); if (sb) sb.disabled = ui.thinking || ui.client.thinking;
   if (ui.dossierId) { const d = cur(); const t = document.getElementById("dh-total"); if (t) t.textContent = d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "pas encore de devis";
-    const st = document.getElementById("dh-status"); if (st) st.innerHTML = chip(d.status); }
+    const st = document.getElementById("dh-status"); if (st) st.innerHTML = chipFor(d); }
   if (c) window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
   save();
 }
@@ -1211,6 +1298,7 @@ function todos() {
     if (n.warn || n.todo || d.status === "nouveau" || d.status === "chiffrage" || d.status === "visite") out.push({ d, n }); });
   return out.sort((a, b) => (b.n.warn - a.n.warn));
 }
+const ASK_IDEAS = ["Qui dois-je relancer ?", "Combien j'ai à encaisser en tout ?", "Où en sont mes devis ce mois-ci ?"];
 function viewHome() {
   if (ui.cap) return viewCapture();
   const t = todos(), open = D.filter(d => ["envoye"].includes(d.status)).reduce((a, d) => a + totals(d).tot, 0);
@@ -1226,8 +1314,11 @@ function viewHome() {
       <button class="start-btn" id="start-photo">${ICONS.cam}Photos<span>Chantier, captures</span></button>
     </div>
     ${saved ? `<div class="okbox"><span>Enregistré dans tes notes : <b>${esc(noteTitle(saved))}</b></span><button class="pill-btn" id="open-saved">Ouvrir</button></div>` : ""}
-    ${ui.homeChat.length ? `<div class="big-new"><div class="card-top"><h3>Discussion avec l'IA</h3><button class="link" id="home-clear">Terminer</button></div>
-      <div class="chat" id="chat">${chatHtml(ui.homeChat)}</div>${composer("Réponds à l'IA…")}</div>` : ""}
+    ${ui.homeChat.length || ui.homeAsk ? `<div class="big-new"><div class="card-top"><h3>${ui.homeMode === "ask" ? "Mon assistant" : "Discussion avec l'IA"}</h3><button class="link" id="home-clear">Terminer</button></div>
+      <div class="chat" id="chat">${chatHtml(ui.homeChat)}</div>
+      ${ui.homeMode === "ask" && !ui.homeChat.length ? `<div class="quick" id="ask-ideas">${ASK_IDEAS.map(q => `<button class="mini" data-askq="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : ""}
+      ${composer(ui.homeMode === "ask" ? "Pose ta question ou donne un ordre…" : "Réponds à l'IA…")}</div>`
+      : `<button class="ask-row" id="start-ask">${ICONS.mic}<span><b>Parler à mon assistant</b><small>Une question, un ordre : qui relancer, où en est un chantier, « Gobet a payé »…</small></span></button>`}
     <div class="section-t">À faire</div>
     <div>${t.length ? t.map(({ d, n }) => `<button class="todo" data-open="${d.id}"><span class="dotc" style="background:var(${n.warn ? "--warn" : "--accent"})"></span><span class="todo-t"><b>${esc(n.t)}</b><span>${esc(d.client.name)} · ${esc(d.title)}</span></span><span>›</span></button>`).join("") : `<p class="empty">Rien d'urgent.</p>`}</div>`;
 }
@@ -1270,7 +1361,7 @@ function capText() {
   return t;
 }
 async function stopDictation() { if (dict && dictState !== "idle") { try { await dict.stop(); } catch (e) {} } }
-function startCapture(kind) { ui.cap = { kind, src: "client" }; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; ui.lastNote = null; render(); window.scrollTo({ top: 0 }); if (kind === "dict" && dict) onMic(); }
+function startCapture(kind) { ui.homeChat = []; ui.homeAsk = false; ui.homeMode = null; ui.choices = []; ui.cap = { kind, src: "client" }; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; ui.lastNote = null; render(); window.scrollTo({ top: 0 }); if (kind === "dict" && dict) onMic(); }
 async function finishCapture(dest) {
   await stopDictation();
   const c = ui.cap; let text = capText();
@@ -1287,10 +1378,12 @@ async function finishCapture(dest) {
 }
 function bindCapture() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("start-ask", () => { ui.homeChat = []; ui.homeAsk = true; ui.homeMode = "ask"; render(); const t = document.getElementById("ask"); if (t) t.focus(); });
+  document.querySelectorAll("[data-askq]").forEach(b => b.onclick = () => { ui.homeAsk = true; ui.homeMode = "ask"; ask(null, b.dataset.askq, { ask: true }); });
   on("start-dict", () => startCapture("dict")); on("start-msg", () => startCapture("msg")); on("start-photo", () => startCapture("photo"));
   on("open-saved", () => { const id = ui.lastNote; ui.lastNote = null; ui.tab = "notes"; ui.dossierId = null; ui.noteId = id; render(); window.scrollTo({ top: 0 }); });
   on("go-settings", () => go("settings"));
-  on("home-clear", () => { ui.homeChat = []; ui.choices = []; render(); });
+  on("home-clear", () => { ui.homeChat = []; ui.homeAsk = false; ui.homeMode = null; ui.choices = []; render(); });
   if (!ui.cap) return;
   on("cap-cancel", async () => { await stopDictation(); ui.cap = null; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; render(); });
   on("cap-mic", onMic);
@@ -1875,6 +1968,23 @@ function checkQuote(d) {
 
 /* ================= Tests de l'IA ================= */
 // Chaque test refait un devis dont on connaît la bonne réponse. expect : [id du catalogue, quantité totale attendue].
+// Entreprise de test pour les questions à l'assistant (accueil) : 7 dossiers, 6 devis envoyés ou acceptés, des factures dans tous les états.
+function askWorld() {
+  const t = Date.now(), m0 = new Date(t); m0.setDate(1); m0.setHours(0, 0, 0, 0); const inMonth = m0.getTime() + 1000, lastMonth = m0.getTime() - 5 * DAY;
+  const lines = (n) => [L("l" + n, "Général", "Peinture murs, dispersion mate", "m²", 40 + n * 10, 18), L("m" + n, "Général", "Préparation des surfaces (lessivage, ponçage)", "m²", 40 + n * 10, 8)];
+  const mk = (id, name, place, o = {}) => Object.assign({ id, no: 300 + +id.slice(1), client: { name, place, address: "", phone: "", email: "" }, title: "Travaux de peinture", status: "nouveau", source: "Appel", created: t - 30 * DAY, facts: [], missing: [], photos: [], chat: [], messages: [],
+    quote: { lines: lines(+id.slice(1)), discount: 0, priceType: "ferme", validityDays: null, notes: null } }, o);
+  const inv = (d, no, sentAgo, paid) => { d.invoice = { no, date: t - (sentAgo + 1) * DAY, days: 30, lines: clone(d.quote.lines), discount: 0, vat: clone(S.vat), done: "", sentAt: t - sentAgo * DAY, paidAt: paid ? t - 2 * DAY : null, reminders: [] }; return d; };
+  return [
+    mk("w1", "Mme S. Dupont", "Fribourg", { title: "Cage d'escalier", status: "envoye", sentAt: t - 8 * DAY, firstSentAt: t - 8 * DAY }),
+    mk("w2", "M. J. Martin", "Marly", { title: "Façade", status: "envoye", sentAt: t - 1 * DAY, firstSentAt: t - 1 * DAY }),
+    inv(mk("w3", "M. A. Gobet", "Marly", { title: "Chambre d'enfant", status: "accepte", sentAt: t - 60 * DAY, firstSentAt: t - 60 * DAY, acceptedAt: inMonth }), "2026-001", 40, false),
+    inv(mk("w4", "Mme L. Rochat", "Bulle", { title: "Salon", status: "accepte", sentAt: t - 12 * DAY, firstSentAt: t - 12 * DAY, acceptedAt: inMonth }), "2026-002", 5, false),
+    inv(mk("w5", "M. Pierre Rochat", "Givisiez", { title: "Cage d'escalier", status: "accepte", sentAt: t - 20 * DAY, firstSentAt: t - 20 * DAY, acceptedAt: lastMonth }), "2026-003", 12, false),
+    inv(mk("w6", "Mme C. Bapst", "Villars-sur-Glâne", { title: "Bureau", status: "accepte", sentAt: t - 70 * DAY, firstSentAt: t - 70 * DAY, acceptedAt: lastMonth }), "2026-004", 50, true),
+    mk("w7", "M. R. Favre", "Corminboeuf", { title: "Volets", status: "accepte", sentAt: t - 20 * DAY, firstSentAt: t - 20 * DAY, acceptedAt: lastMonth })
+  ];
+}
 const BUILTIN_TESTS = [
   { id: "t1", name: "Salon complet", input: "Salon : murs 42 m² à préparer et à peindre, plafond 18 m². Une porte à laquer. Protection des sols.", expect: [["protect", 1], ["prep", 42], ["paint", 42], ["ceil", 18], ["wood", 1]], clean: true },
   { id: "t2", name: "Correction en dictant", input: "Chambre : murs 45, non pardon, 54 m², préparation et peinture.", expect: [["prep", 54], ["paint", 54]], clean: true },
@@ -1894,6 +2004,20 @@ const BUILTIN_TESTS = [
   { id: "t17", name: "Modifie le mail au lieu d'en créer un autre", setup: [["Salon", "prep", 40], ["Salon", "paint", 40]], setupMessages: [{ kind: "Envoi du devis", subject: "Votre devis", body: "Bonjour Madame Rochat,\n\nVeuillez trouver ci-joint notre devis pour le salon. Nous restons à votre disposition pour toute question.\n\nMeilleures salutations" }], input: "Dans le mail d'envoi, ajoute que je peux commencer début janvier.", oneMessage: "janvier" },
   { id: "t18", name: "Connaît la date de visite", dossier: { visit: "jeudi 9h" }, input: "C'est quand déjà la visite chez elle ?", replyHas: ["jeudi"], noLines: true },
   { id: "h2", name: "Nouveau client : dossier créé, pas de mail sans demande", home: true, input: "[Message de client collé]\nBonjour, j'aimerais repeindre mon salon et ma chambre à Givisiez, c'est possible avant Noël ? Sarah Bapst, 079 555 66 77", newDossier: true, noMessage: true, mustAsk: true, noIds: true },
+  { id: "q1", name: "Assistant : qui relancer ?", home: true, ask: true, world: askWorld, input: "Qui dois-je relancer ?", tutoie: true,
+    checks: [(w, r) => ({ ok: /Dupont/.test(r), text: "Cite Mme Dupont (devis envoyé il y a 8 jours)" }), (w, r) => ({ ok: !/Martin/.test(r), text: "Ne cite pas M. Martin (devis envoyé hier)" })] },
+  { id: "q2", name: "Assistant : combien à encaisser ?", home: true, ask: true, world: askWorld, input: "Combien j'ai à encaisser en tout ?", tutoie: true,
+    checks: [(w, r) => { const exp = w.filter(d => d.invoice && d.invoice.sentAt && !d.invoice.paidAt).reduce((a, d) => a + invTotals(d).tot, 0), nums = (String(r).replace(/(\d)['’   ](?=\d{3})/g, "$1").match(/\d+(?:[.,]\d+)?/g) || []).map(x => parseFloat(x.replace(",", "."))); return { ok: nums.some(n => Math.abs(n - exp) <= 0.06), text: `Donne le bon total à encaisser (CHF ${chf(exp)})` }; }] },
+  { id: "q3", name: "Assistant : devis acceptés ce mois", home: true, ask: true, world: askWorld, input: "Combien de devis ont été acceptés ce mois-ci ?",
+    checks: [(w, r) => ({ ok: /\b(2|deux)\b/i.test(r), text: "Répond 2 (Gobet et Rochat ; Favre date d'un autre mois)" })] },
+  { id: "q4", name: "Assistant : « il a payé » marque la bonne facture", home: true, ask: true, world: askWorld, input: "M. Gobet a payé sa facture.", tutoie: true,
+    checks: [(w) => ({ ok: !!w.find(d => /Gobet/.test(d.client.name)).invoice.paidAt, text: "Facture de M. Gobet marquée payée" }), (w) => ({ ok: w.filter(d => d.invoice && d.invoice.paidAt).length === 2, text: "Aucune autre facture touchée (2 payées au total, dont celle de Mme Bapst)" })] },
+  { id: "q5", name: "Assistant : créer la facture d'un dossier accepté", home: true, ask: true, world: askWorld, input: "Fais la facture de M. Favre.",
+    checks: [(w) => { const d = w.find(x => /Favre/.test(x.client.name)); return { ok: !!d.invoice && Math.abs(invTotals(d).tot - totals(d).tot) < 0.01, text: "Facture créée pour M. Favre, au montant du devis" }; }, (w) => ({ ok: w.filter(d => d.invoice).length === 5, text: "Une seule facture créée (5 au total)" })] },
+  { id: "q6", name: "Assistant : client inconnu, ne rien inventer", home: true, ask: true, world: askWorld, input: "Où en est le dossier de M. Muller ?",
+    checks: [(w, r) => ({ ok: /aucun|pas de|pas trouv|ne trouve|introuvable|n'ai pas|connais pas/i.test(r), text: "Dit qu'il ne trouve pas M. Muller" }), (w) => ({ ok: w.length === 7, text: "Ne crée aucun dossier" })] },
+  { id: "q7", name: "Assistant : deux clients du même nom, demander lequel", home: true, ask: true, world: askWorld, input: "Rochat a payé.",
+    checks: [(w, r) => ({ ok: /\?/.test(r), text: "Pose la question : quel Rochat ?" }), (w) => ({ ok: !w.some(d => /Rochat/.test(d.client.name) && d.invoice && d.invoice.paidAt), text: "Ne marque aucune facture payée tant qu'il hésite" })] },
   { id: "h1", name: "Reconnaît un client existant (accueil)", home: true, input: "[Message de client collé]\nBonjour, c'est Mme Rochat de Marly. Finalement on aimerait aussi repeindre le plafond du salon, il fait 20 m². Bonne journée", expect: [["ceil", 20]], sameDossier: true },
   { id: "t19", name: "« Proposer » ne veut pas dire ajouter", input: "Salon 45 m² de murs, plafond 20. Chambre 32 m² de murs, une porte. Préparation et peinture partout, plus le déplacement.", aiNotes: "Toujours proposer la protection des sols pour les intérieurs.", expect: [["prep", 77], ["paint", 77], ["ceil", 20], ["wood", 1], ["travel", 1]], absent: ["protect"], clean: true, noIds: true, maxReply: 260 },
   { id: "e1", trade: "electricite", name: "Électricien : pièces comptées", input: "Cuisine : 4 prises et 2 interrupteurs. Salon : 2 points lumineux. Plus le déplacement.", expect: [["prise", 4], ["inter", 2], ["lum", 2], ["depl", 1]], clean: true },
@@ -1968,6 +2092,7 @@ function gradeTest(t, d, reply, ms, extra = {}) {
     const bad = words.filter(w => ids.includes(w) || /^(line_id|dossier_id|item_id|message_id)$/i.test(w) || /^test-t\d+/.test(w));
     checks.push({ ok: !bad.length, text: bad.length ? "Identifiant technique dans la réponse : " + bad.join(", ") : "Aucun identifiant technique dans la réponse" }); }
   if (t.tutoie) checks.push({ ok: !/\b(voulez|souhaitez|pouvez|avez|vous)\b/i.test(reply || ""), text: "Tutoie l'artisan" });
+  (t.checks || []).forEach(f => checks.push(f(extra.world || [], reply || "")));
   if (t.clean) { const w = checkQuote(d); checks.push({ ok: !w.length, text: w.length ? "Contrôle automatique : " + w.join(" · ") : "Contrôle automatique : rien à signaler" }); }
   return { ok: checks.length > 0 && checks.every(c => c.ok), checks, ms, reply: reply || "", lines: d.quote.lines.map(l => `${l.room} · ${l.label} · ${l.qty === "" ? "?" : l.qty} ${l.unit} · ${chf(num(l.price))}`) };
 }
@@ -2001,11 +2126,11 @@ async function runTests() {
       // Tests de l'accueil : un par un, avec une liste de dossiers de test à la place des vrais.
       for (const t of solo) {
         const realD = D, realN = N, d = testDossier(t), t0 = performance.now(); let reply;
-        D = [d]; N = []; ui.target = null; S = t.aiNotes ? Object.assign(clone(base), { aiNotes: t.aiNotes }) : base;
-        try { reply = await runAgent([{ role: "user", content: t.input }], null, true, []);
+        D = t.world ? t.world() : [d]; N = []; ui.target = null; ui.homeChat = []; S = t.aiNotes ? Object.assign(clone(base), { aiNotes: t.aiNotes }) : base;
+        try { reply = await runAgent([{ role: "user", content: t.input }], null, true, [], t.ask ? { ask: true } : {});
           const target = dossier(ui.target) || d;
-          ui.evalResults[t.id] = gradeTest(t, target, reply, Math.round(performance.now() - t0), { dossierCount: D.length, sameTarget: target === d });
-        } finally { D = realD; N = realN; ui.target = null; S = base; }
+          ui.evalResults[t.id] = gradeTest(t, target, reply, Math.round(performance.now() - t0), { dossierCount: D.length, sameTarget: target === d, world: D });
+        } finally { D = realD; N = realN; ui.target = null; ui.homeChat = []; S = base; }
         const keep = S; S = realS; render(); S = keep;
       }
     }

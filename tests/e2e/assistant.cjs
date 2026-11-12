@@ -60,6 +60,14 @@ const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
   ok(/CHF/.test(await p.evaluate(() => ui.homeChat.filter(m => m.role === 'assistant').pop().text)), "bouton de suggestion : la question part toute seule");
   await p.click('#home-clear'); await sleep(200); await p.click('#start-ask'); await sleep(200); await p.evaluate(() => startCapture('msg')); await sleep(200);
   ok(await p.evaluate(() => !ui.homeAsk && ui.homeMode === null && !ui.homeChat.length && !!ui.cap), "démarrer une saisie (Dicter, Message, Photos) quitte le mode question");
+  // Garde-fous d'ajout de ligne (échecs t1 et t19 du vrai test)
+  const al = await p.evaluate(() => { S.aiNotes = "Toujours proposer la protection des sols pour les intérieurs."; const d = clone(D[2]); d.id = 'zz'; d.quote.lines = []; const tools = makeTools(() => d, false, { user: "Salon 45 m² de murs, plus le déplacement.", prevBot: "" }); const add = tools.find(t => t.name === "add_line"); const run = (inp) => { try { return add.execute(inp); } catch (e) { return "ERR " + e.message; } };
+    const o = {}; o.free = run({ room: "Général", label: "Protection des sols et du mobilier", unit: "forfait", unit_price: 150 }); o.freeLines = d.quote.lines.length;
+    run({ room: "Général", item_id: "travel" }); const f = d.quote.lines[0]; o.forfait = f && [f.qty, f.missingQty];
+    o.paper = run({ room: "Entrée", label: "Pose de papier peint", unit: "m²", qty: 15 }); o.paperLine = d.quote.lines.find(l => /papier/.test(l.label)); S.aiNotes = ""; return o; });
+  ok(/PROPOSE/.test(al.free) && al.freeLines === 0, "une ligne libre au nom d'un article à « proposer » est refusée (comme avec l'identifiant)");
+  ok(al.forfait && al.forfait[0] === 1 && al.forfait[1] === false, "un forfait ajouté sans quantité vaut 1 (pas « quantité manquante »)");
+  ok(al.paperLine && al.paperLine.missingPrice === true && al.paperLine.price === 0, "une vraie ligne libre reste sans prix inventé");
   ok(errs.length === 0, "aucune erreur dans la page " + errs.join(' | '));
   await b.close(); s.kill(); mock.kill(); process.exit(0);
 })();

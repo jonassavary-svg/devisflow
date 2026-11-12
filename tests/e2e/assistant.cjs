@@ -68,6 +68,8 @@ const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
   ok(/PROPOSE/.test(al.free) && al.freeLines === 0, "une ligne libre au nom d'un article à « proposer » est refusée (comme avec l'identifiant)");
   ok(al.forfait && al.forfait[0] === 1 && al.forfait[1] === false, "un forfait ajouté sans quantité vaut 1 (pas « quantité manquante »)");
   ok(al.paperLine && al.paperLine.missingPrice === true && al.paperLine.price === 0, "une vraie ligne libre reste sans prix inventé");
+  const sc = await p.evaluate(() => { D = askWorld(); const id = "ds0c0it"; D[0].id = id; const l = D[0].quote.lines[0].id; return [scrubIds(`Dossier créé pour Sarah Bapst à Givisiez (${id}). Il manque les surfaces.`), scrubIds(`La ligne ${l} est à 150.00 (dossier ${id}).`), scrubIds("Tu dois relancer Mme Dupont."), scrubIds("Facture 2026-001 payée, total CHF 1'295.05.")]; });
+  ok(sc[0] === "Dossier créé pour Sarah Bapst à Givisiez. Il manque les surfaces." && !/ds0c0it/.test(sc[1]) && sc[2] === "Tu dois relancer Mme Dupont." && sc[3] === "Facture 2026-001 payée, total CHF 1'295.05.", "un identifiant technique recopié par l'IA est effacé, le reste de la réponse n'est pas touché : " + JSON.stringify(sc));
   ok(errs.length === 0, "aucune erreur dans la page " + errs.join(' | '));
   await b.close(); s.kill(); mock.kill(); process.exit(0);
 })();

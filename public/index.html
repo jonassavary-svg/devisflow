@@ -1070,6 +1070,13 @@ function historyFor(chat, maxChars = 14000) {
   if (start > 0 && hist.length) hist[0] = { role: "user", content: "(Échanges plus anciens non montrés : les faits importants sont dans le dossier.)\n" + hist[0].content };
   return hist;
 }
+// Dernier filet : si l'IA recopie un identifiant technique (dossier, ligne, message) dans sa réponse, le code l'efface.
+function scrubIds(text) {
+  const ids = new Set(); D.forEach(d => { ids.add(d.id); d.quote.lines.forEach(l => ids.add(l.id)); (d.messages || []).forEach(m => m.id && ids.add(m.id)); });
+  let t = String(text || "");
+  ids.forEach(id => { id = String(id || ""); if (id.length >= 5 && /^\w+$/.test(id)) t = t.replace(new RegExp("\\b" + id + "\\b", "g"), ""); });
+  return t.replace(/\s*\(\s*[,;]?\s*\)/g, "").replace(/\s+([.,;:!?])/g, "$1").replace(/ {2,}/g, " ").trim();
+}
 async function runAgent(history, d, isHome, images, how = {}) {
   const prevBot = [...history].reverse().find(m => m.role === "assistant");
   const convo = { user: String(history[history.length - 1].content || "").replace(/^\(.*?\)\n/gm, ""), prevBot: prevBot ? String(prevBot.content) : "" };
@@ -1086,7 +1093,7 @@ async function runAgent(history, d, isHome, images, how = {}) {
     + `\n\nMESSAGE DE L'ARTISAN :\n${history[history.length - 1].content}`;
   const opts = { system: RULES + "\n\n" + companyForAgent(), tools, speed: S.aiSpeed || "equilibre", finalTools: ["propose_choices"], modelTier: "default", cache: false, onText: ({ text: t }) => { const el = document.getElementById("live-reply"); if (el && t && t !== "Thinking...") el.textContent = t; } };
   if (images.length && imgOK) opts.images = images;
-  try { const r = await sample(history, opts); ui.lastAgent = { ms: r.ms, steps: r.steps }; return (r.text || "").trim(); }
+  try { const r = await sample(history, opts); ui.lastAgent = { ms: r.ms, steps: r.steps }; return scrubIds(r.text || ""); }
   catch (e) { ui.agentError = (e && e.message) || "erreur"; return e && e.code === "rate_limited" ? "Je suis momentanément saturé, réessaie dans quelques secondes." : e && e.message ? "Je n'ai pas pu répondre : " + e.message : "Je n'ai pas pu répondre, réessaie."; }
 }
 async function ask(d, override, opts = {}) {

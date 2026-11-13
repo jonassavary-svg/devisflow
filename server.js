@@ -1,4 +1,4 @@
-// DevisFlow – serveur local
+// Artipilote – serveur local
 // Sert l'application, enregistre les données sur le disque (dossier data/)
 // et relaie les demandes de l'assistant vers l'API Claude (la clé reste sur le serveur).
 import http from "node:http";
@@ -194,7 +194,7 @@ function indexHtml() {
   return html.replace("<!--DF_DATA-->", `<script>window.__DF_DATA = ${data}; window.__DF_AI = ${JSON.stringify({ ready: hasKey(), model: MODEL, started: STARTED })};</script>`);
 }
 
-// Sécurité : seule la page DevisFlow elle-même peut appeler l'API (pas un autre site ouvert dans le navigateur).
+// Sécurité : seule la page Artipilote elle-même peut appeler l'API (pas un autre site ouvert dans le navigateur).
 const LOOPBACK = ["127.0.0.1", "localhost", "::1"].includes(HOST);
 function allowedCaller(req) {
   const host = String(req.headers.host || "");
@@ -208,7 +208,7 @@ function allowedCaller(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   try {
-    if (url.pathname.startsWith("/api/") && !allowedCaller(req)) return send(res, 403, { code: "forbidden", error: "Demande refusée : elle ne vient pas de la page DevisFlow." });
+    if (url.pathname.startsWith("/api/") && !allowedCaller(req)) return send(res, 403, { code: "forbidden", error: "Demande refusée : elle ne vient pas de la page Artipilote." });
     if (url.pathname === "/api/status") return send(res, 200, { ai: hasKey(), provider: PROVIDER, model: MODEL, effort: EFFORT, started: STARTED, usage: usageThisMonth() });
     if (url.pathname === "/api/journal") {
       let lines = []; try { lines = fs.readFileSync(JOURNAL, "utf8").trim().split("\n").slice(-400); } catch { /* vide */ }
@@ -249,7 +249,7 @@ const server = http.createServer(async (req, res) => {
 
 // ---------- Rappels de paiement : notification sur le Mac ----------
 // Quand une facture envoyée n'est pas payée et que le jour du rappel est arrivé, le Mac affiche une notification,
-// même si la page DevisFlow est fermée. Une seule notification par rappel. Mêmes règles que dans l'app (invState).
+// même si la page Artipilote est fermée. Une seule notification par rappel. Mêmes règles que dans l'app (invState).
 const NOTIF_FILE = path.join(DATA_DIR, "notifications.json");
 const DAY_MS = 86400000;
 const dayStart = (ts) => { const x = new Date(ts); x.setHours(0, 0, 0, 0); return x.getTime(); };
@@ -276,7 +276,7 @@ function checkReminders() {
     const h = new Date().getHours(); if (!process.env.DEVISFLOW_NOTIFY_FILE && (h < 8 || h >= 19)) return; // pas la nuit
     let seen = {}; try { seen = JSON.parse(fs.readFileSync(NOTIF_FILE, "utf8")); } catch {}
     const due = remindersDue(readData()).filter(x => !seen[x.key]); if (!due.length) return;
-    for (const x of due) { seen[x.key] = Date.now(); notify("DevisFlow : rappel de paiement", `Facture ${x.no} (${x.client}) : ${x.late} jour${x.late > 1 ? "s" : ""} de retard. ${x.n ? "Envoie le " + (x.n + 1) + "e rappel." : "Envoie un rappel."}`); }
+    for (const x of due) { seen[x.key] = Date.now(); notify("Artipilote : rappel de paiement", `Facture ${x.no} (${x.client}) : ${x.late} jour${x.late > 1 ? "s" : ""} de retard. ${x.n ? "Envoie le " + (x.n + 1) + "e rappel." : "Envoie un rappel."}`); }
     fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(NOTIF_FILE, JSON.stringify(seen));
   } catch (e) { console.error("[rappels]", e.message); }
 }
@@ -285,7 +285,7 @@ setTimeout(checkReminders, Math.min(20000, NOTIFY_EVERY)).unref();
 setInterval(checkReminders, NOTIFY_EVERY).unref();
 
 server.listen(PORT, HOST, () => {
-  console.log(`\nDevisFlow est lancé : http://localhost:${PORT}`);
+  console.log(`\nArtipilote est lancé : http://localhost:${PORT}`);
   console.log(hasKey() ? `Assistant IA : actif (${PROVIDER === "openai" ? "OpenAI" : "Anthropic"}, ${MODEL})` : "Assistant IA : INACTIF, ajoute ta clé dans le fichier .env (voir LISEZMOI.md)");
   console.log(`Données : ${DATA_FILE}\n`);
 });

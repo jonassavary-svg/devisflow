@@ -5,7 +5,7 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
 ## Installation (une seule fois, environ 10 minutes)
 
 1. **Installer Node.js** (version 20.12 ou plus récente) : télécharge la version « LTS » sur https://nodejs.org et installe-la.
-2. **Télécharger DevisFlow avec git** (pour les mises à jour automatiques). Dans le Terminal (Cmd + Espace, tape « Terminal ») :
+2. **Télécharger Artipilote avec git** (pour les mises à jour automatiques). Dans le Terminal (Cmd + Espace, tape « Terminal ») :
    ```
    cd ~/Desktop
    git clone https://github.com/jonassavary-svg/devisflow.git
@@ -18,7 +18,7 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
    open -e .env
    ```
    Colle ta clé après `OPENAI_API_KEY=` (ou après `ANTHROPIC_API_KEY=`), puis enregistre (Cmd + S). Une seule clé suffit.
-4. **Installer DevisFlow en continu** :
+4. **Installer Artipilote en continu** :
    ```
    bash installer-mac.sh
    ```
@@ -26,11 +26,11 @@ Demandes de clients, devis avec ton catalogue de prix, PDF et relances, avec un 
 
 ## Au quotidien
 
-- DevisFlow tourne en permanence, même après un redémarrage du Mac : ouvre simplement http://localhost:3000 (ajoute-le à tes favoris).
-- **Mises à jour automatiques** : toutes les 2 minutes, DevisFlow regarde s'il y a une nouvelle version sur GitHub, l'installe et redémarre. La page se recharge toute seule quand tu n'es pas en train d'écrire.
+- Artipilote tourne en permanence, même après un redémarrage du Mac : ouvre simplement http://localhost:3000 (ajoute-le à tes favoris).
+- **Mises à jour automatiques** : toutes les 2 minutes, Artipilote regarde s'il y a une nouvelle version sur GitHub, l'installe et redémarre. La page se recharge toute seule quand tu n'es pas en train d'écrire.
 - Ton fichier `.env` et tes données (`data/`) ne sont jamais touchés par les mises à jour.
-- Journal (en cas de problème) : `~/Library/Logs/DevisFlow.log`. Pour le voir : `open ~/Library/Logs/DevisFlow.log`
-- Pour arrêter DevisFlow et ne plus le lancer au démarrage : `bash desinstaller-mac.sh`
+- Journal (en cas de problème) : `~/Library/Logs/Artipilote.log`. Pour le voir : `open ~/Library/Logs/Artipilote.log`
+- Pour arrêter Artipilote et ne plus le lancer au démarrage : `bash desinstaller-mac.sh`
 - Après avoir changé ta clé dans `.env` : relance `bash installer-mac.sh` pour que le changement soit pris en compte.
 
 Sans clé API, l'app fonctionne quand même (dossiers, devis, PDF), mais sans l'assistant IA.
@@ -44,7 +44,7 @@ Sans clé API, l'app fonctionne quand même (dossiers, devis, PDF), mais sans l'
 
 ## Où sont mes données ?
 
-- Dans le dossier `data/` de DevisFlow (`data/devisflow.json`).
+- Dans le dossier `data/` de Artipilote (`data/devisflow.json`).
 - Une sauvegarde automatique par jour dans `data/sauvegardes/` (les 30 derniers jours).
 - Paramètres, en bas : « Exporter » pour télécharger une copie.
 

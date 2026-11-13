@@ -12,8 +12,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms)); const ok = (c, t) => co
   ok(await p.evaluate(() => document.documentElement.scrollHeight) < 1500, 'page courte (' + await p.evaluate(() => document.documentElement.scrollHeight) + ' px)');
   await p.screenshot({ path: __dirname + '/captures/parametres-blocs.png' });
   await p.click('details[data-blk="modele"] > summary'); await sleep(200);
-  ok(await p.locator('[data-tmode]').count() === 2, 'deux choix : mon propre devis / modèle DevisFlow');
-  ok(await p.locator('[data-color]').count() > 0, 'modèle DevisFlow : couleurs et logo');
+  ok(await p.locator('[data-tmode]').count() === 2, 'deux choix : mon propre devis / modèle Artipilote');
+  ok(await p.locator('[data-color]').count() > 0, 'modèle Artipilote : couleurs et logo');
   await p.click('[data-tmode="own"]'); await sleep(200);
   ok(await p.locator('details[data-blk="modele"][open]').count() === 1, 'le bloc reste ouvert après un choix');
   ok(await p.locator('label[for="ownq-in"]').count() >= 1 && await p.locator('[data-color]').count() === 0, 'mon propre devis : bouton d\'import');
@@ -31,8 +31,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms)); const ok = (c, t) => co
   ok(/OFFRE/.test(txt) && /Suite à notre visite/.test(txt) && /meilleures salutations/.test(txt) && /échafaudages/.test(txt), 'PDF : titre, intro, fin et conditions du devis importé');
   ok((txt.match(/Offre valable/g) || []).length === 1 && (txt.match(/Paiement/g) || []).length === 1, 'pas de condition en double');
   execSync(`pdftoppm -png -r 110 -singlefile own.pdf ${__dirname}/captures/pdf-inspire`);
-  // retour au modèle DevisFlow
+  // retour au modèle Artipilote
   await p.evaluate(() => go('settings')); await sleep(200); await p.click('[data-tmode="app"]'); await sleep(200);
-  ok(await p.evaluate(() => S.template.mode) === 'app' && await p.locator('[data-color]').count() > 0, 'retour au modèle DevisFlow');
+  ok(await p.evaluate(() => S.template.mode) === 'app' && await p.locator('[data-color]').count() > 0, 'retour au modèle Artipilote');
   console.log('erreurs', errs); await b.close(); s.kill(); mock.kill(); process.exit(0);
 })();

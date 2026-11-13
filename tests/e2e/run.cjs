@@ -42,7 +42,7 @@ function start(env, port) {
   const r0 = reqs[0];
   ok(r0.headers.beta && r0.headers.beta.includes('server-side-fallback'), 'en-tête fallback envoyé : ' + r0.headers.beta);
   ok(r0.body.model === 'claude-opus-5-5' && r0.body.fallbacks === 'default' && r0.body.output_config.effort === 'medium', 'modèle, fallbacks, effort');
-  ok(Array.isArray(r0.body.system) && /assistant DevisFlow/.test(r0.body.system[0].text), 'consignes envoyées en system');
+  ok(Array.isArray(r0.body.system) && /assistant Artipilote/.test(r0.body.system[0].text), 'consignes envoyées en system');
   ok(r0.body.tools.length > 10 && r0.body.tools.every(t => t.input_schema), 'outils au bon format (' + r0.body.tools.length + ')');
   const withThinking = reqs.find(r => r.body.messages.some(m => m.role === 'assistant' && m.content.some(c => c.type === 'thinking')));
   ok(!!withThinking, 'bloc thinking renvoyé tel quel');

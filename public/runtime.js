@@ -1,4 +1,4 @@
-// DevisFlow – capacités du navigateur pour la version locale.
+// Artipilote – capacités du navigateur pour la version locale.
 // Fournit window.claude.use(nom) avec : sample (assistant IA via le serveur local),
 // dictation (dictée du navigateur), tts (lecture à voix haute) et downloads (enregistrer un fichier).
 (function () {

@@ -9,7 +9,7 @@ const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
   await sleep(1300); const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 430, height: 1000 } }); const errs = []; p.on('pageerror', e => errs.push(e.message));
   await p.goto('http://localhost:3118/'); await sleep(900);
   await p.evaluate(() => { D = askWorld(); save(); go('home'); }); await sleep(400);
-  ok(await p.locator('#start-ask').count() === 1, "accueil : bouton « Parler à mon assistant »");
+  ok(await p.locator('#asst-open').isVisible() && await p.locator('.demo-bar,.foot,.ask-row').count() === 0, "accueil : bouton flottant « Assistant », plus de barre démo ni de texte de pied");
   // Vue d'ensemble : calculée par le logiciel
   const ov = await p.evaluate(() => { const o = overviewForAgent(); const exp = D.filter(d => d.invoice && d.invoice.sentAt && !d.invoice.paidAt).reduce((a, d) => a + invTotals(d).tot, 0); return { s: o.summary, exp, n: o.dossiers.length, first: o.dossiers[0].client }; });
   ok(Math.abs(ov.s.invoices_to_cash.total_chf - ov.exp) < 0.01 && ov.s.invoices_to_cash.count === 3, `à encaisser : ${ov.s.invoices_to_cash.count} factures, CHF ${ov.s.invoices_to_cash.total_chf}`);
@@ -35,31 +35,43 @@ const ok = (c, t) => console.log((c ? 'PASS ' : 'FAIL ') + t);
   ok(g.paid.ok && /already paid/.test(g.afterPaid), "payée : plus de rappel possible");
   // Parler à l'assistant : zone, boutons de suggestion
   await p.evaluate(() => { D = askWorld(); save(); go('home'); }); await sleep(300);
-  await p.click('#start-ask'); await sleep(300);
-  ok(await p.locator('#ask').count() === 1 && await p.locator('[data-askq]').count() === 3 && await p.locator('.big-new h3', { hasText: 'Mon assistant' }).count() === 1, "zone de conversation ouverte, avec 3 questions toutes prêtes");
+  await p.click('#asst-open'); await sleep(300);
+  ok(await p.locator('#ask').count() === 1 && await p.locator('[data-askq]').count() === 3 && await p.locator('h2', { hasText: 'Mon assistant' }).count() === 1 && !(await p.locator('#asst-open').isVisible()), "écran de l'assistant ouvert, avec 3 questions toutes prêtes, sans bouton flottant");
   await p.fill('#ask', 'Qui dois-je relancer ?'); await p.click('#send-ask');
-  await p.waitForFunction(() => ui.homeChat.some(m => m.role === 'assistant'), null, { timeout: 15000 }); await sleep(200);
-  const r1 = await p.evaluate(() => ui.homeChat.filter(m => m.role === 'assistant').pop().text);
+  await p.waitForFunction(() => A.some(m => m.role === 'assistant'), null, { timeout: 15000 }); await sleep(200);
+  const r1 = await p.evaluate(() => A.filter(m => m.role === 'assistant').pop().text);
   ok(/Dupont/.test(r1) && !/Martin/.test(r1), "réponse : " + r1);
   const req = fs.readFileSync(path.join(__dirname, 'oracle.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).pop(), txt = JSON.stringify(req);
   ok(/VUE D'ENSEMBLE/.test(txt) && /quotes_to_relance_now/.test(txt) && !/create_dossier/.test(JSON.stringify(req.tools || [])), "l'IA reçoit la vue d'ensemble, et n'a pas l'outil « créer un dossier » ici");
-  ok(await p.evaluate(() => D.length === 7 && ui.tab === 'home' && !ui.dossierId), "aucun dossier créé, on reste à l'accueil");
+  ok(await p.evaluate(() => D.length === 7 && ui.tab === 'assistant' && !ui.dossierId), "aucun dossier créé, on reste dans l'assistant");
   // Un ordre : « Gobet a payé »
   await p.fill('#ask', 'M. Gobet a payé sa facture.'); await p.click('#send-ask');
-  await p.waitForFunction(() => ui.homeChat.filter(m => m.role === 'assistant').length >= 2, null, { timeout: 15000 }); await sleep(300);
-  const o = await p.evaluate(() => ({ paid: !!dossier('w3').invoice.paidAt, others: D.filter(d => d.invoice && d.invoice.paidAt).length, act: ui.homeChat.filter(m => m.role === 'action').map(m => m.text), tab: ui.tab, dot: !!document.querySelector('#tabs button[data-tab="factures"] .dot') }));
-  ok(o.paid && o.others === 2 && /payée/.test(o.act.join()) && /Gobet/.test(o.act.join()) && o.tab === 'home', "« Gobet a payé » : facture marquée payée, action visible dans la discussion, on reste à l'accueil");
-  ok(await p.locator('.todo', { hasText: 'Gobet' }).count() === 0 && await p.locator('#ask-ideas').count() === 0, "l'accueil se met à jour (Gobet n'est plus « à faire ») et les suggestions ont disparu");
+  await p.waitForFunction(() => A.filter(m => m.role === 'assistant').length >= 2, null, { timeout: 15000 }); await sleep(300);
+  const o = await p.evaluate(() => ({ paid: !!dossier('w3').invoice.paidAt, others: D.filter(d => d.invoice && d.invoice.paidAt).length, act: A.filter(m => m.role === 'action').map(m => m.text), tab: ui.tab, dot: !!document.querySelector('#tabs button[data-tab="factures"] .dot') }));
+  ok(o.paid && o.others === 2 && /payée/.test(o.act.join()) && /Gobet/.test(o.act.join()) && o.tab === 'assistant', "« Gobet a payé » : facture marquée payée, action visible dans la discussion, on reste dans l'assistant");
+  ok(await p.locator('#ask-ideas').count() === 0, "les suggestions ont disparu");
   ok(o.dot === false, "le point rouge de l'onglet Factures disparaît (plus de rappel à envoyer)");
   await p.screenshot({ path: path.join(__dirname, 'assistant-accueil.png'), fullPage: true });
-  // Terminer, puis une suggestion, puis un autre usage de l'accueil
-  await p.click('#home-clear'); await sleep(200);
-  ok(await p.locator('#start-ask').count() === 1 && await p.evaluate(() => !ui.homeAsk && !ui.homeMode && !ui.homeChat.length), "« Terminer » : retour à l'accueil normal");
-  await p.click('#start-ask'); await sleep(200); await p.click('[data-askq]:nth-child(2)');
-  await p.waitForFunction(() => ui.homeChat.some(m => m.role === 'assistant'), null, { timeout: 15000 });
-  ok(/CHF/.test(await p.evaluate(() => ui.homeChat.filter(m => m.role === 'assistant').pop().text)), "bouton de suggestion : la question part toute seule");
-  await p.click('#home-clear'); await sleep(200); await p.click('#start-ask'); await sleep(200); await p.evaluate(() => startCapture('msg')); await sleep(200);
-  ok(await p.evaluate(() => !ui.homeAsk && ui.homeMode === null && !ui.homeChat.length && !!ui.cap), "démarrer une saisie (Dicter, Message, Photos) quitte le mode question");
+  // Retour, historique conservé, rechargement, nouvelle conversation
+  await p.click('#asst-back'); await sleep(300);
+  ok(await p.evaluate(() => ui.tab === 'home') && await p.locator('.todo', { hasText: 'Gobet' }).count() === 0, "« Retour » : accueil, à jour (Gobet n'est plus « à faire »)");
+  await p.click('#asst-open'); await sleep(300);
+  ok(await p.evaluate(() => A.length >= 4) && await p.locator('#chat .msg, #chat > *').count() >= 4, "la conversation est gardée en rouvrant l'assistant");
+  await sleep(900); await p.reload(); await sleep(900); await p.evaluate(() => { D = askWorld(); go('home'); }); await sleep(300);
+  await p.click('#asst-open'); await sleep(300);
+  ok(await p.evaluate(() => A.length >= 4), "la conversation est gardée après rechargement de la page");
+  await p.click('#asst-clear'); await sleep(300);
+  ok(await p.evaluate(() => A.length === 0) && await p.locator('[data-askq]').count() === 3, "« Nouvelle conversation » : vide, suggestions de retour");
+  await p.click('[data-askq]:nth-child(2)');
+  await p.waitForFunction(() => A.some(m => m.role === 'assistant'), null, { timeout: 15000 });
+  ok(/CHF/.test(await p.evaluate(() => A.filter(m => m.role === 'assistant').pop().text)), "bouton de suggestion : la question part toute seule");
+  // Le bouton flottant est aussi dans les dossiers, et caché là où un champ de saisie existe
+  await p.evaluate(() => go('dossiers')); await sleep(200);
+  ok(await p.locator('#asst-open').isVisible(), "bouton flottant visible dans la liste des dossiers");
+  await p.evaluate(() => openDossier('w1')); await sleep(300);
+  ok(!(await p.locator('#asst-open').isVisible()) && await p.locator('#ask').count() === 1, "caché dans un dossier (déjà un champ de discussion)");
+  await p.evaluate(() => go('home')); await p.click('#asst-open'); await sleep(200); await p.evaluate(() => { go('home'); startCapture('msg'); }); await sleep(200);
+  ok(await p.evaluate(() => !!ui.cap) && !(await p.locator('#asst-open').isVisible()), "pendant une saisie (Dicter, Message, Photos) : pas de bouton flottant");
   // Garde-fous d'ajout de ligne (échecs t1 et t19 du vrai test)
   const al = await p.evaluate(() => { S.aiNotes = "Toujours proposer la protection des sols pour les intérieurs."; const d = clone(D[2]); d.id = 'zz'; d.quote.lines = []; const tools = makeTools(() => d, false, { user: "Salon 45 m² de murs, plus le déplacement.", prevBot: "" }); const add = tools.find(t => t.name === "add_line"); const run = (inp) => { try { return add.execute(inp); } catch (e) { return "ERR " + e.message; } };
     const o = {}; o.free = run({ room: "Général", label: "Protection des sols et du mobilier", unit: "forfait", unit_price: 150 }); o.freeLines = d.quote.lines.length;

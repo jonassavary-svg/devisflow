@@ -56,20 +56,7 @@ body {
   padding-block: 16px 24px;
 }
 .shell { max-width: 440px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-.demo-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
-  font-size: 12px; color: var(--muted);
-}
-.tape-label {
-  background: var(--tape); color: #2B2104; font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
-  text-transform: uppercase; padding: 3px 10px; transform: rotate(-1.2deg); display: inline-block;
-}
-.switch { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
-.switch button {
-  border: 0; background: transparent; color: var(--muted); font: 600 13px var(--body); padding: 6px 12px; border-radius: 999px; cursor: pointer;
-}
-.switch button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
-.app { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; display: flex; flex-direction: column; min-height: 640px; }
+.app { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; overflow: clip; display: flex; flex-direction: column; min-height: 640px; }
 .app-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .brand { font-family: var(--display); font-weight: 800; font-size: 19px; letter-spacing: -.01em; }
 .brand span { color: var(--accent); }
@@ -78,7 +65,7 @@ body {
 h2 { font-family: var(--display); font-weight: 700; font-size: 20px; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
 h3 { font-family: var(--display); font-weight: 700; font-size: 15px; margin: 0; }
 .sub { color: var(--muted); font-size: 13px; margin: 0; }
-.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border-top: 1px solid var(--line); background: var(--surface); }
+.tabs { position: sticky; bottom: 0; z-index: 5; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border-top: 1px solid var(--line); background: var(--surface); }
 .tabs button {
   border: 0; background: transparent; color: var(--muted); font: 600 12px var(--body); padding: 10px 4px 12px; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative;
@@ -98,10 +85,6 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .chip.visit { background: var(--tape-soft); color: var(--tape-ink); }
 .chip.sent { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
 .chip.ok { background: var(--ok-soft); color: var(--ok); }
-.ask-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 14px; padding: 12px 14px; cursor: pointer; color: var(--ink); font-family: var(--body); }
-.ask-row svg { width: 22px; height: 22px; flex: none; stroke: var(--accent); fill: none; stroke-width: 1.8; }
-.ask-row b { display: block; font-size: 14px; }
-.ask-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .chip.late { background: #FBE9E7; color: #C0392B; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 
@@ -174,7 +157,9 @@ table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .choices button { border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 999px; padding: 7px 12px; font: 600 13px var(--body); cursor: pointer; }
 
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); z-index: 20; }
-.foot { font-size: 12px; color: var(--muted); text-align: center; }
+.fab { position: fixed; bottom: 84px; right: calc(max(0px, (100vw - 440px) / 2) + 16px); z-index: 20; display: flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 700 14px var(--body); padding: 12px 18px; box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: pointer; }
+.fab svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 1.8; }
+.fab[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .mic.rec, .wave i { animation: none; } }
 
 /* v2 additions */
@@ -428,23 +413,16 @@ code { font-family: var(--mono, monospace); font-size: .9em; }
 <script src="/runtime.js"></script>
 
 <div class="shell">
-  <div class="demo-bar">
-    <span class="tape-label">Version locale</span>
-    <div class="switch" role="group" aria-label="Choisir la vue">
-      <button id="v-artisan" aria-pressed="true">Vue artisan</button>
-      <button id="v-client" aria-pressed="false">Vue client</button>
-    </div>
-  </div>
   <div class="app">
     <div class="app-head">
       <div class="brand">Devis<span>Flow</span></div>
       <div class="who" id="who"></div>
     </div>
     <main class="view" id="view"></main>
-    <nav class="tabs" id="tabs" aria-label="Navigation" style="grid-template-columns:repeat(4,1fr)"></nav>
+    <nav class="tabs" id="tabs" aria-label="Navigation"></nav>
   </div>
-  <p class="foot">Version locale : tes données sont enregistrées sur cet ordinateur (dossier data/). Dictée : Chrome, Edge ou Safari.</p>
 </div>
+<button class="fab" id="asst-open" hidden></button>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -558,12 +536,13 @@ function stampStatus(d) {
   if (["envoye", "accepte", "refuse"].includes(d.status) && d.sentAt && d.firstSentAt === undefined) d.firstSentAt = d.sentAt;
 }
 D.forEach(d => { if (d.status === "accepte" && d.acceptedAt === undefined) d.acceptedAt = 0; if (d.sentAt && d.firstSentAt === undefined) d.firstSentAt = d.sentAt; });
+let A = (SERVER_DATA && Array.isArray(SERVER_DATA.assistant)) ? SERVER_DATA.assistant : (() => { try { const b = JSON.parse(localStorage.getItem("df-backup")); if (b && Array.isArray(b.assistant)) return b.assistant; } catch (e) {} return []; })();
 let saveT;
 function save() { D.forEach(stampStatus); clearTimeout(saveT); saveT = setTimeout(pushSave, 400); }
 async function pushSave() {
   saveT = null;
   if (ui.evalRunning) { saveT = setTimeout(pushSave, 1000); return; } // pendant les tests, S est une copie temporaire
-  const body = JSON.stringify({ settings: S, dossiers: D, notes: N, savedAt: Date.now() });
+  const body = JSON.stringify({ settings: S, dossiers: D, notes: N, assistant: A.slice(-100), savedAt: Date.now() });
   try { localStorage.setItem("df-backup", body); } catch (e) {}
   try {
     const r = await fetch("/api/data", { method: "PUT", headers: { "content-type": "application/json" }, body });
@@ -573,7 +552,7 @@ async function pushSave() {
 }
 window.addEventListener("pagehide", () => {
   if (!saveT || ui.evalRunning) return; clearTimeout(saveT); saveT = null;
-  try { navigator.sendBeacon("/api/data", new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N, savedAt: Date.now() })], { type: "application/json" })); } catch (e) {}
+  try { navigator.sendBeacon("/api/data", new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N, assistant: A.slice(-100), savedAt: Date.now() })], { type: "application/json" })); } catch (e) {}
 });
 
 const ui = { mode: "artisan", tab: "home", dossierId: null, dtab: "chat", filter: "tous", thinking: false, draft: "", pasteMode: false, pendingImages: [], pendingUrls: [], choices: [], speak: false, autoSend: false,
@@ -814,7 +793,7 @@ function onMic() {
   dict.start().catch(e => { if (e && e.code === "not_granted") toast("Micro refusé : écris ou utilise le micro du clavier."); else if (e && e.code === "unavailable") { dict = null; render(); } });
   renderMic();
 }
-function sendCurrent() { if (ui.mode === "client") clientAsk(); else if (ui.dossierId) ask(cur()); else ask(null); }
+function sendCurrent() { if (ui.mode === "client") clientAsk(); else if (ui.tab === "assistant") ask(null, undefined, { ask: true }); else if (ui.dossierId) ask(cur()); else ask(null); }
 
 /* ================= Agent IA ================= */
 function linesForAgent(d) { return d.quote.lines.map((l, i) => ({ line_id: l.id, position: i + 1, room: l.room, label: l.label, qty: l.qty === "" ? null : num(l.qty), unit: l.unit, unit_price: num(l.price), from_catalogue: !l.missingPrice })); }
@@ -1016,7 +995,7 @@ function invoiceTools(pick, log) {
 // Outils de l'assistant depuis l'accueil : lecture d'un dossier, factures, boutons de réponse. Pas de création ni de modification de devis.
 function askTools() {
   const byId = (i) => dossier(String(i.dossier_id || ""));
-  const log = (d, text) => { act(d, text); ui.homeChat.push({ role: "action", text: `${text} (${d.client.name})` }); };
+  const log = (d, text) => { act(d, text); A.push({ role: "action", text: `${text} (${d.client.name})` }); };
   const choices = makeTools(() => null, true).find(t => t.name === "propose_choices");
   return [{ name: "read_dossier", description: "Full detail of one dossier by dossier_id: client, facts, quote lines, totals, messages, invoice.", inputSchema: { type: "object", properties: { dossier_id: { type: "string" } }, required: ["dossier_id"] },
     execute: (i) => { const d = byId(i); if (!d) throw new Error("Unknown dossier_id."); return dossierForAgent(d); } }, ...invoiceTools(byId, log), choices];
@@ -1105,18 +1084,17 @@ async function ask(d, override, opts = {}) {
   if (ui.pasteMode && !text.startsWith("[")) text = "[Message de client collé]\n" + text;
   ui.autoSend = false; ui.pasteMode = false; ui.choices = []; ui.draft = ""; if (ta) ta.value = "";
   const isHome = !d;
-  if (isHome && ui.homeMode === "ask" && !opts.dossier) opts = Object.assign({}, opts, { ask: true });
-  const chat = isHome ? ui.homeChat : d.chat;
+  const chat = opts.ask ? A : isHome ? ui.homeChat : d.chat;
   ui.pendingUrls.forEach(u => chat.push({ role: "photo", url: u }));
   chat.push({ role: "user", text });
   ui.thinking = true; ui.target = null; ui.savedNote = null; refresh();
-  const actBefore = ui.homeChat.filter(m => m.role === "action").length;
-  let reply;
+    let reply;
   if (sample) {
     reply = await runAgent(historyFor(chat), d, isHome, images, opts);
   } else reply = opts.ask ? "Assistant IA non activé : ajoute ta clé API dans le fichier .env pour pouvoir me parler (voir LISEZMOI.md)." : offlineAgent(d, text, isHome);
   ui.thinking = false; ui.pendingImages = []; ui.pendingUrls = [];
-  if (isHome) {
+  if (opts.ask) A.push({ role: "assistant", text: reply || "C'est noté." });
+  else if (isHome) {
     const t = dossier(ui.target);
     if (t) { // move the conversation into the dossier
       const moved = ui.homeChat.splice(0);
@@ -1128,8 +1106,8 @@ async function ask(d, override, opts = {}) {
     ui.homeChat.push({ role: "assistant", text: reply || "C'est noté." });
     if (ui.savedNote) { ui.savedNote = null; toast("Enregistré dans tes notes"); }
   } else d.chat.push({ role: "assistant", text: reply || "C'est noté." });
+  if (A.length > 100) A.splice(0, A.length - 100);
   save(); refresh(); speak(reply);
-  if (isHome && opts.ask && ui.homeChat.filter(m => m.role === "action").length > actBefore) render(); // l'accueil (à faire, totaux) suit les actions de l'IA
 }
 function speak(t) { if (tts && ui.speak && t) tts.speak(t.slice(0, 1900)).catch(() => {}); }
 function offlineAgent(d, text, isHome) {
@@ -1289,9 +1267,9 @@ function composer(placeholder) {
 function refresh() {
   if (ui.evalRunning) return;
   renderTabs(); // le point rouge des onglets suit les changements faits par l'IA
-  const ideas = document.getElementById("ask-ideas"); if (ideas && ui.homeChat.length) ideas.remove();
+  const ideas = document.getElementById("ask-ideas"); if (ideas && A.length) ideas.remove();
   const c = document.getElementById("chat");
-  if (c) { c.innerHTML = chatHtml(ui.mode === "client" ? ui.client.chat : ui.dossierId ? cur().chat : ui.homeChat); bindChoices(); }
+  if (c) { c.innerHTML = chatHtml(ui.mode === "client" ? ui.client.chat : ui.tab === "assistant" ? A : ui.dossierId ? cur().chat : ui.homeChat); bindChoices(); }
   const sb = document.getElementById("send-ask"); if (sb) sb.disabled = ui.thinking || ui.client.thinking;
   if (ui.dossierId) { const d = cur(); const t = document.getElementById("dh-total"); if (t) t.textContent = d.quote.lines.length ? "CHF " + chf(totals(d).tot) : "pas encore de devis";
     const st = document.getElementById("dh-status"); if (st) st.innerHTML = chipFor(d); }
@@ -1323,14 +1301,25 @@ function viewHome() {
       <button class="start-btn" id="start-photo">${ICONS.cam}Photos<span>Chantier, captures</span></button>
     </div>
     ${saved ? `<div class="okbox"><span>Enregistré dans tes notes : <b>${esc(noteTitle(saved))}</b></span><button class="pill-btn" id="open-saved">Ouvrir</button></div>` : ""}
-    ${ui.homeChat.length || ui.homeAsk ? `<div class="big-new"><div class="card-top"><h3>${ui.homeMode === "ask" ? "Mon assistant" : "Discussion avec l'IA"}</h3><button class="link" id="home-clear">Terminer</button></div>
+    ${ui.homeChat.length ? `<div class="big-new"><div class="card-top"><h3>Discussion avec l'IA</h3><button class="link" id="home-clear">Terminer</button></div>
       <div class="chat" id="chat">${chatHtml(ui.homeChat)}</div>
-      ${ui.homeMode === "ask" && !ui.homeChat.length ? `<div class="quick" id="ask-ideas">${ASK_IDEAS.map(q => `<button class="mini" data-askq="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : ""}
-      ${composer(ui.homeMode === "ask" ? "Pose ta question ou donne un ordre…" : "Réponds à l'IA…")}</div>`
-      : `<button class="ask-row" id="start-ask">${ICONS.mic}<span><b>Parler à mon assistant</b><small>Une question, un ordre : qui relancer, où en est un chantier, « Gobet a payé »…</small></span></button>`}
+      ${composer("Réponds à l'IA…")}</div>` : ""}
     <div class="section-t">À faire</div>
     <div>${t.length ? t.map(({ d, n }) => `<button class="todo" data-open="${d.id}"><span class="dotc" style="background:var(${n.warn ? "--warn" : "--accent"})"></span><span class="todo-t"><b>${esc(n.t)}</b><span>${esc(d.client.name)} · ${esc(d.title)}</span></span><span>›</span></button>`).join("") : `<p class="empty">Rien d'urgent.</p>`}</div>`;
 }
+function viewAssistant() {
+  return `<div style="display:flex;justify-content:space-between;align-items:center"><button class="back" id="asst-back">‹ Retour</button>${A.length ? `<button class="link" id="asst-clear">Nouvelle conversation</button>` : ""}</div>
+    <div><h2>Mon assistant</h2><p class="sub">Pose une question ou donne un ordre : qui relancer, où en est un chantier, « Gobet a payé »…</p></div>
+    <div class="chat" id="chat">${chatHtml(A)}</div>
+    ${A.length ? "" : `<div class="quick" id="ask-ideas">${ASK_IDEAS.map(q => `<button class="mini" data-askq="${esc(q)}">${esc(q)}</button>`).join("")}</div>`}
+    ${composer("Pose ta question ou donne un ordre…")}`;
+}
+function openAssistant() {
+  ui.back = { tab: ui.tab, id: ui.dossierId, dtab: ui.dtab };
+  ui.tab = "assistant"; ui.dossierId = null; ui.choices = []; ui.draft = ""; render(); window.scrollTo({ top: 0 });
+  const t = document.getElementById("ask"); if (t && !A.length) t.focus();
+}
+function closeAssistant() { const b = ui.back || { tab: "home" }; ui.dtab = b.dtab || ui.dtab; go(b.tab === "assistant" ? "home" : b.tab, b.id); }
 // Saisie depuis l'accueil : dictée, message ou photos, puis « En note » ou « En dossier ».
 function viewCapture() {
   const c = ui.cap;
@@ -1370,7 +1359,7 @@ function capText() {
   return t;
 }
 async function stopDictation() { if (dict && dictState !== "idle") { try { await dict.stop(); } catch (e) {} } }
-function startCapture(kind) { ui.homeChat = []; ui.homeAsk = false; ui.homeMode = null; ui.choices = []; ui.cap = { kind, src: "client" }; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; ui.lastNote = null; render(); window.scrollTo({ top: 0 }); if (kind === "dict" && dict) onMic(); }
+function startCapture(kind) { ui.homeChat = []; ui.choices = []; ui.cap = { kind, src: "client" }; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; ui.lastNote = null; render(); window.scrollTo({ top: 0 }); if (kind === "dict" && dict) onMic(); }
 async function finishCapture(dest) {
   await stopDictation();
   const c = ui.cap; let text = capText();
@@ -1387,12 +1376,10 @@ async function finishCapture(dest) {
 }
 function bindCapture() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
-  on("start-ask", () => { ui.homeChat = []; ui.homeAsk = true; ui.homeMode = "ask"; render(); const t = document.getElementById("ask"); if (t) t.focus(); });
-  document.querySelectorAll("[data-askq]").forEach(b => b.onclick = () => { ui.homeAsk = true; ui.homeMode = "ask"; ask(null, b.dataset.askq, { ask: true }); });
   on("start-dict", () => startCapture("dict")); on("start-msg", () => startCapture("msg")); on("start-photo", () => startCapture("photo"));
   on("open-saved", () => { const id = ui.lastNote; ui.lastNote = null; ui.tab = "notes"; ui.dossierId = null; ui.noteId = id; render(); window.scrollTo({ top: 0 }); });
   on("go-settings", () => go("settings"));
-  on("home-clear", () => { ui.homeChat = []; ui.homeAsk = false; ui.homeMode = null; ui.choices = []; render(); });
+  on("home-clear", () => { ui.homeChat = []; ui.choices = []; render(); });
   if (!ui.cap) return;
   on("cap-cancel", async () => { await stopDictation(); ui.cap = null; ui.draft = ""; ui.pendingImages = []; ui.pendingUrls = []; render(); });
   on("cap-mic", onMic);
@@ -2134,12 +2121,12 @@ async function runTests() {
       await Promise.all([worker(), worker(), worker(), worker()]);
       // Tests de l'accueil : un par un, avec une liste de dossiers de test à la place des vrais.
       for (const t of solo) {
-        const realD = D, realN = N, d = testDossier(t), t0 = performance.now(); let reply;
-        D = t.world ? t.world() : [d]; N = []; ui.target = null; ui.homeChat = []; S = t.aiNotes ? Object.assign(clone(base), { aiNotes: t.aiNotes }) : base;
+        const realD = D, realN = N, realA = A, d = testDossier(t), t0 = performance.now(); let reply;
+        D = t.world ? t.world() : [d]; N = []; A = []; ui.target = null; ui.homeChat = []; S = t.aiNotes ? Object.assign(clone(base), { aiNotes: t.aiNotes }) : base;
         try { reply = await runAgent([{ role: "user", content: t.input }], null, true, [], t.ask ? { ask: true } : {});
           const target = dossier(ui.target) || d;
           ui.evalResults[t.id] = gradeTest(t, target, reply, Math.round(performance.now() - t0), { dossierCount: D.length, sameTarget: target === d, world: D });
-        } finally { D = realD; N = realN; ui.target = null; ui.homeChat = []; S = base; }
+        } finally { D = realD; N = realN; A = realA; ui.target = null; ui.homeChat = []; S = base; }
         const keep = S; S = realS; render(); S = keep;
       }
     }
@@ -2260,12 +2247,13 @@ function render() {
   $("#who").innerHTML = ui.mode === "artisan" ? esc(S.company.name || "Mon entreprise") + "<br>" + esc(S.company.trade) : "Site de l'artisan<br>vue client";
   renderTabs();
   const v = $("#view");
-  v.innerHTML = ui.mode === "client" ? viewClient() : ui.tab === "home" ? viewHome() : ui.tab === "settings" ? viewSettings() : ui.tab === "notes" ? viewNotes() : ui.tab === "factures" ? viewFactures() : viewDossiers();
+  v.innerHTML = ui.mode === "client" ? viewClient() : ui.tab === "assistant" ? viewAssistant() : ui.tab === "home" ? viewHome() : ui.tab === "settings" ? viewSettings() : ui.tab === "notes" ? viewNotes() : ui.tab === "factures" ? viewFactures() : viewDossiers();
   bind(); renderMic();
+  const fab = document.getElementById("asst-open");
+  fab.hidden = ui.mode === "client" || ui.tab === "assistant" || !!ui.cap || !!document.getElementById("ask");
+  fab.innerHTML = ICONS.mic + "Assistant"; fab.onclick = openAssistant;
 }
-function setMode(m) { ui.mode = m; ui.choices = []; ui.draft = ""; $("#v-artisan").setAttribute("aria-pressed", m === "artisan"); $("#v-client").setAttribute("aria-pressed", m === "client"); render(); }
-$("#v-artisan").onclick = () => setMode("artisan");
-$("#v-client").onclick = () => setMode("client");
+function setMode(m) { ui.mode = m; ui.choices = []; ui.draft = ""; render(); }
 
 function bind() {
   if (ui.tab === "notes" && ui.mode === "artisan") bindNotes();
@@ -2274,6 +2262,11 @@ function bind() {
   const d = ui.dossierId ? cur() : null;
   if (ui.tab === "home" && ui.mode === "artisan") bindCapture();
   bindSwipe();
+  if (ui.tab === "assistant") {
+    on("asst-back", closeAssistant);
+    on("asst-clear", () => { A.length = 0; ui.choices = []; save(); render(); });
+    all("[data-askq]", b => b.onclick = () => ask(null, b.dataset.askq, { ask: true }));
+  }
   // Composer
   on("mic", onMic); on("send-ask", sendCurrent);
   on("speak-toggle", () => { ui.speak = !ui.speak; if (!ui.speak && tts) tts.stop(); render(); });
@@ -2387,10 +2380,10 @@ function bind() {
     const keep = { aiSpeed: S.aiSpeed, template: S.template };
     S = Object.assign(clone(DEFAULT_SETTINGS), keep, { company: { name: "", trade: "", address: "", ide: "", phone: "", email: "", logo: "", contact: "", regie: "", iban: "" }, catalogue: [], aiNotes: "", tests: [], lastEval: null, partLabel: "Pièce",
       defaults: { validityDays: 30, payment: "Paiement à 30 jours net.", priceType: "estimatif", relanceDays: 5, notes: "" }, email: { address: "vous", signature: "" } });
-    D = []; N = []; ui.homeChat = []; ui.undo = {}; ui.evalResults = {}; b2.blank = false; save(); go("settings"); toast("Tout est vide : commence par ton entreprise.");
+    D = []; N = []; A = []; ui.homeChat = []; ui.undo = {}; ui.evalResults = {}; b2.blank = false; save(); go("settings"); toast("Tout est vide : commence par ton entreprise.");
   });
-  on("reset-all", () => { if (b2.confirming) { S = clone(DEFAULT_SETTINGS); D = clone(SEED); ui.homeChat = []; ui.undo = {}; save(); b2.confirming = false; go("home"); toast("Exemples remis"); } else { b2.confirming = true; const e = document.getElementById("reset-all"); e.textContent = "Confirmer : tout remettre à zéro ?"; } });
-  on("clear-dossiers", () => { if (b2.clearing) { D = []; ui.homeChat = []; ui.undo = {}; save(); b2.clearing = false; go("home"); toast("Dossiers effacés"); } else { b2.clearing = true; const e = document.getElementById("clear-dossiers"); e.textContent = "Confirmer : effacer tous les dossiers ?"; } });
+  on("reset-all", () => { if (b2.confirming) { S = clone(DEFAULT_SETTINGS); D = clone(SEED); A = []; ui.homeChat = []; ui.undo = {}; save(); b2.confirming = false; go("home"); toast("Exemples remis"); } else { b2.confirming = true; const e = document.getElementById("reset-all"); e.textContent = "Confirmer : tout remettre à zéro ?"; } });
+  on("clear-dossiers", () => { if (b2.clearing) { D = []; A = []; ui.homeChat = []; ui.undo = {}; save(); b2.clearing = false; go("home"); toast("Dossiers effacés"); } else { b2.clearing = true; const e = document.getElementById("clear-dossiers"); e.textContent = "Confirmer : effacer tous les dossiers ?"; } });
   on("export-data", () => downloads.save({ filename: `devisflow-${new Date().toISOString().slice(0, 10)}.json`, data: new Blob([JSON.stringify({ settings: S, dossiers: D, notes: N }, null, 2)], { type: "application/json" }) }));
   on("run-tests", runTests);
   on("copy-results", () => copyText(resultsText()));

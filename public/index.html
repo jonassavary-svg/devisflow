@@ -1507,7 +1507,7 @@ function dDevis(d) {
   const roomSum = (r) => d.quote.lines.filter(l => l.room === r).reduce((a, l) => a + num(l.qty) * num(l.price), 0);
   return `<div class="toolbar"><button class="mini" id="undo" ${canUndo ? "" : "disabled"}>↶ Annuler</button><button class="mini" data-dtab="pdf">Aperçu PDF</button>${downloads && d.quote.lines.length ? `<button class="mini" id="pdf">Télécharger le PDF</button>` : ""}</div>
     ${w.length ? `<div class="warnbox"><b>À vérifier avant d'envoyer :</b><ul class="checks">${w.map(x => `<li class="ko">${esc(x)}</li>`).join("")}</ul></div>` : d.quote.lines.length ? `<p class="hint" style="color:var(--ok)">✓ Contrôle automatique : rien à signaler.</p>` : ""}
-    ${d.quote.lines.length ? "" : `<p class="empty">Pas encore de lignes. Dicte ou écris dans l'onglet Discussion, ou ajoute une prestation ci-dessous.</p>`}
+    ${d.quote.lines.length ? "" : `<button class="btn primary" id="prep-quote" ${ui.thinking ? "disabled" : ""}>${ui.thinking ? "L'IA prépare le devis…" : "Préparer le devis avec l'IA"}</button><p class="empty">Pas encore de lignes. Dicte ou écris dans l'onglet Discussion, ou ajoute une prestation ci-dessous.</p>`}
     <div>${rooms.map(room => `<div class="room"><div class="room-h"><span>${esc(room)}</span><span>${chf(roomSum(room))}</span></div>` + d.quote.lines.map((l, idx) => l.room !== room ? "" : `
       <div class="line" data-line="${l.id}">
         <div class="line-top"><textarea class="lbl" id="lbl-${l.id}" data-f="label" rows="${Math.max(1, Math.ceil(l.label.length / 27))}" aria-label="Prestation">${esc(l.label)}</textarea>
@@ -2284,6 +2284,7 @@ function bind() {
   on("back", () => go("dossiers"));
   all("[data-dtab]", b => b.onclick = () => { ui.dtab = b.dataset.dtab; ui.editMsg = null; render(); });
   all("[data-quick]", b => b.onclick = () => { ui.dtab = "chat"; render(); ask(d, QUICK[+b.dataset.quick]); if (!sample) { fallbackMessage(d, +b.dataset.quick === 1 ? "Relance" : "Envoi"); ui.dtab = "messages"; render(); } });
+  all("#prep-quote", b => b.onclick = () => { ask(d, "Prépare le devis à partir des informations du dossier (notes, mesures, photos), avec mes prix."); });
   all("[data-quickx]", b => b.onclick = () => { ui.dtab = "chat"; render(); ask(d, "Rédige un message pour proposer ou confirmer une visite gratuite au client."); });
   if (d) {
     // Quote editor

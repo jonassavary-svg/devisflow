@@ -1428,7 +1428,7 @@ function nextStep(d) {
   if (d.status === "nouveau") return d.quote.lines.length ? { t: "Compléter le devis", btn: ["Voir le devis", 'data-dtab="devis"'] } : { t: "Organiser la visite", btn: ["Proposer une visite", 'data-quickx="visit"'] };
   if (d.status === "visite") return { t: `Visite ${d.visit || "à planifier"}`, btn: dict ? ["Dicter la visite", 'id="ns-dict"'] : ["Discussion", 'data-dtab="chat"'] };
   if (d.status === "chiffrage") {
-    if (!d.quote.lines.length) return { t: "Remplir le devis", btn: ["Discussion", 'data-dtab="chat"'] };
+    if (!d.quote.lines.length) return { t: "Remplir le devis", btn: ["Préparer le devis avec l'IA", 'id="prep-quote"'] };
     if (w.length) return { t: `${w.length} point${w.length > 1 ? "s" : ""} à vérifier dans le devis`, warn: true, btn: ["Voir", 'data-dtab="devis"'] };
     return { t: "Devis prêt à envoyer", btn: hasEnvoi ? ["Envoyer", 'data-dtab="messages"'] : ["Préparer l'envoi", 'data-quick="0"'] };
   }

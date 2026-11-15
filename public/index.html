@@ -734,7 +734,7 @@ function nextAction(d) {
   const missQ = d.quote.lines.filter(l => l.missingQty && l.qty === "" || l.missingPrice && !num(l.price)).length;
   if (d.status === "nouveau") return { t: "Organiser la visite", warn: false };
   if (d.status === "visite") return { t: `Visite ${d.visit || "à planifier"}`, warn: false };
-  if (d.status === "chiffrage") return missQ ? { t: `${missQ} info(s) à compléter`, warn: true } : { t: "Devis prêt à envoyer", warn: false };
+  if (d.status === "chiffrage") return !d.quote.lines.length ? { t: "Devis à préparer", warn: false } : missQ ? { t: `${missQ} info(s) à compléter`, warn: true } : { t: "Devis prêt à envoyer", warn: false };
   if (d.status === "envoye") { const due = d.sentAt + S.defaults.relanceDays * DAY; return Date.now() >= due ? { t: "À relancer", warn: true } : { t: `Relance le ${fmtDate(due)}`, warn: false }; }
   if (d.status === "accepte") { const st = invState(d); return st ? { t: st.t, warn: !!st.warn, todo: !!st.todo } : { t: "Chantier à faire, puis facturer", warn: false }; }
   return { t: "Clos", warn: false };

@@ -1802,7 +1802,7 @@ function viewSettings() {
   const logoRow = `<div class="room-actions">${c.logo ? `<img class="logo-prev" src="${c.logo}" alt="Logo">` : ""}<label class="pill-btn" for="logo-in">${c.logo ? "Changer le logo" : "Ajouter mon logo"}</label><input class="file-in" type="file" accept="image/*" id="logo-in">${c.logo ? `<button class="pill-btn" id="logo-del">Retirer</button>` : ""}</div>`;
   const modele = `<div class="pick">
         <button data-tmode="own" aria-pressed="${mode === "own"}"><b>${ICONS.doc} Mon propre devis</b>Tu importes ton devis habituel, l'IA s'en inspire.</button>
-        <button data-tmode="app" aria-pressed="${mode === "app"}"><b>${ICONS.note} Modèle Artipilote</b>Tu choisis la couleur et ton logo.</button>
+        <button data-tmode="app" aria-pressed="${mode === "app"}"><b>${ICONS.note} Modèle prêt à l'emploi</b>Tu choisis le style, la couleur et ton logo.</button>
       </div>
       ${mode === "own" ? ownBody + logoRow : `
       <div class="tpl-pick">
@@ -1847,7 +1847,7 @@ function viewSettings() {
           <p class="hint">Un modèle remplace ton catalogue par un catalogue type de ce métier, à adapter avec tes prix.</p>
         </details>`}
       <input class="file-in" type="file" accept="image/*,application/pdf,.pdf,.txt,.csv,text/plain,text/csv" id="oldquote-in">`)}
-    ${blk("modele", "Mon modèle de devis", mode === "own" ? (own ? "Mon propre devis" : "Mon propre devis · à importer") : "Modèle Artipilote · " + S.template.style, modele)}
+    ${blk("modele", "Mon modèle de devis", mode === "own" ? (own ? "Mon propre devis" : "Mon propre devis · à importer") : "Modèle prêt à l'emploi · " + S.template.style, modele)}
     ${blk("conditions", "Mes conditions", `${S.defaults.priceType === "ferme" ? "Forfait ferme" : "Estimatif"} · valable ${S.defaults.validityDays} jours`, `
       <div class="grid2"><label class="lab">Type de prix<select id="s-ptype"><option value="estimatif" ${S.defaults.priceType === "estimatif" ? "selected" : ""}>Estimatif</option><option value="ferme" ${S.defaults.priceType === "ferme" ? "selected" : ""}>Forfait ferme</option></select></label>
         <label class="lab">Validité (jours)<input class="field" id="s-valid" data-def="validityDays" inputmode="numeric" value="${S.defaults.validityDays}"></label></div>

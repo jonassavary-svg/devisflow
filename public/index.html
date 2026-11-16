@@ -359,6 +359,9 @@ label.btn { display: flex; align-items: center; justify-content: center; gap: 6p
 .contacts .miss { color: var(--muted); border: 1px dashed var(--line); background: transparent; cursor: pointer; font: inherit; font-size: 12.5px; }
 .next-step { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 12px; padding: 10px 12px; background: var(--accent-soft); }
 .next-step.warn { background: var(--warn-soft); }
+.next-step.big { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; }
+.next-step.big b { font-size: 17px; }
+.next-step.big .btn { width: 100%; padding: 14px; font-size: 15px; }
 .next-step small { display: block; color: var(--muted); font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
 .next-step b { font-size: 14.5px; }
 .next-step .mini { white-space: nowrap; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 7px 12px; }
@@ -1428,7 +1431,7 @@ function nextStep(d) {
   if (d.status === "nouveau") return d.quote.lines.length ? { t: "Compléter le devis", btn: ["Voir le devis", 'data-dtab="devis"'] } : { t: "Organiser la visite", btn: ["Proposer une visite", 'data-quickx="visit"'] };
   if (d.status === "visite") return { t: `Visite ${d.visit || "à planifier"}`, btn: dict ? ["Dicter la visite", 'id="ns-dict"'] : ["Discussion", 'data-dtab="chat"'] };
   if (d.status === "chiffrage") {
-    if (!d.quote.lines.length) return { t: "Remplir le devis", btn: ["Préparer le devis avec l'IA", 'id="prep-quote"'] };
+    if (!d.quote.lines.length) return { t: "Préparer le devis", big: true, btn: [ui.thinking ? "L'IA prépare le devis…" : "Préparer le devis avec l'IA", `id="prep-quote" ${ui.thinking ? "disabled" : ""}`] };
     if (w.length) return { t: `${w.length} point${w.length > 1 ? "s" : ""} à vérifier dans le devis`, warn: true, btn: ["Voir", 'data-dtab="devis"'] };
     return { t: "Devis prêt à envoyer", btn: hasEnvoi ? ["Envoyer", 'data-dtab="messages"'] : ["Préparer l'envoi", 'data-quick="0"'] };
   }
@@ -1455,7 +1458,7 @@ function viewDossier(d) {
         ${c.email ? `<a href="mailto:${esc(c.email)}">${ICON_MAIL}${esc(c.email)}</a>` : `<button class="miss" data-dtab="fiche">+ Email</button>`}
         ${where ? `<a target="_blank" href="https://maps.google.com/?q=${encodeURIComponent(where)}">${ICON_PIN}${esc(where)}</a>` : `<button class="miss" data-dtab="fiche">+ Adresse</button>`}
       </div>
-      <div class="next-step ${ns.warn ? "warn" : ""}"><div><small>Prochaine étape</small><b>${esc(ns.t)}</b></div>${ns.btn ? `<button class="mini" ${ns.btn[1]}>${esc(ns.btn[0])}</button>` : ""}</div>
+      <div class="next-step ${ns.warn ? "warn" : ""} ${ns.big ? "big" : ""}"><div><small>Prochaine étape</small><b>${esc(ns.t)}</b></div>${ns.btn ? `<button class="${ns.big ? "btn primary" : "mini"}" ${ns.btn[1]}>${esc(ns.btn[0])}</button>` : ""}</div>
     </div>
     <div class="seg">${tabs.map(([k, l]) => `<button data-dtab="${k}" aria-current="${cur === k}">${l}${k === "messages" && drafts ? `<span class="badge">${drafts}</span>` : ""}</button>`).join("")}</div>
     ${(views[ui.dtab] || dChat)(d)}`;
